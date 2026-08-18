@@ -1,0 +1,29 @@
+# ===== 密钥 / 敏感信息（绝不提交到 GitHub） =====
+.config.json
+.streamlit/secrets.toml
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== 一次性开发 / 调试脚本（运行时不需要） =====
+add_kb_cards.py
+analyze_assets.py
+dedup_merge_calc.py
+gen_calc_cards.py
+generate_quiz.py
+rembg_cutout.py
+retouch_assets.py
+
+# ===== 未使用的实验性图片 =====
+mascot_bidu.png
+mascot_blackcat_a.png
+mascot_blackcat_b.png
+
+# ===== 其他 =====
+*.log
+.DS_Store
+Thumbs.db
