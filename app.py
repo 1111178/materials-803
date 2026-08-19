@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 KB_GLOB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb", "材料科学基础803知识库-*.md")  # 知识库文件（10 章，随项目走，便于部署）
 TOP_K = 4          # 检索返回条数
 
-st.set_page_config(page_title="803 材料科学基础 · 知识库", page_icon="📚", layout="wide")
+st.set_page_config(page_title="材料科学基础 · 知识库", page_icon="📚", layout="wide")
 
 # ================= 吉祥物：戴眼镜穿白大褂的小猫 =================
 MASCOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cat.svg")
@@ -224,7 +224,7 @@ def retrieve(question: str, k: int = TOP_K):
 def build_prompt(question: str, retrieved):
     blocks = [f"【{c['chapter']} · {c['title']}】\n{c['content']}" for c in retrieved]
     context = "\n\n".join(blocks)
-    return f"""你是备考《材料科学基础》803 的考研同学身边一位耐心的"小老师"——亲切的学长学姐。你的目标是帮同学真正理解知识，而不是直接甩答案。
+    return f"""你是备考《材料科学基础》的考研同学身边一位耐心的"小老师"——亲切的学长学姐。你的目标是帮同学真正理解知识，而不是直接甩答案。
 
 先判断用户问题属于哪一类，再按对应方式自然作答：
 
@@ -673,7 +673,7 @@ def show_hero():
       <div class="hero">
         <div style="flex:1;min-width:250px;">
           <div class="title">今天想攻克哪个章节呀？🐾</div>
-          <div class="sub">我是你的材料科学基础小老师，和拉布布一起，陪你弄明白 803 的每个知识点～</div>
+          <div class="sub">我是你的材料科学基础小老师，和拉布布一起，陪你弄明白每个知识点～</div>
         </div>
         {buddy}
       </div>
@@ -764,7 +764,7 @@ show_decorations()
 
 with st.sidebar:
     # 顶部：简洁的学习状态卡片
-    st.markdown("### 📚 803 小课堂")
+    st.markdown("### 📚 材料科学基础小课堂")
     st.markdown(f"已收录 **{len(chapters)}** 章 · **{len(cards)}** 个知识点")
     st.caption("今天也要加油呀 💪")
 
@@ -822,25 +822,33 @@ if nav == "🗺️ 知识地图":
     st.markdown("### 🗺️ 知识地图")
     st.caption(f"共 **{len(chapters)}** 章 · **{len(cards)}** 个知识点，点开章节再点知识点即可查看卡片")
 
-    # ---- 晶体结构 3D 可视化 ----
+    # ---- 晶体结构 3D 可视化（懒加载：默认不渲染，避免移动端首屏卡顿）----
     with st.expander("🔮 晶体结构 3D 可视化（体心立方 · 面心立方 · 密排六方）", expanded=False):
-        struct = st.radio(
-            "选择晶体结构", list(CRYSTALS.keys()),
-            horizontal=True, label_visibility="collapsed",
+        show_3d = st.toggle(
+            "加载 3D 模型",
+            value=False,
+            help="3D 模型较重，手机端建议保持关闭以加快加载；PC 端打开后可拖拽旋转查看",
         )
-        d = CRYSTALS[struct]
-        st.plotly_chart(_crystal_fig(struct, d["atoms"], d["verts"], d["edges"], d["R"], d["aspect"]))
-        st.markdown(
-            f"<div style='background:rgba(255,255,255,0.72);border:1px solid #DFEAD4;border-radius:16px;"
-            f"backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);"
-            f"padding:14px 18px;margin-top:6px'>"
-            f"<span style='font-size:16px;font-weight:700;color:#41534A'>{d['name']}</span><br>"
-            f"<span style='font-size:15px;color:#4A5568'>"
-            f"🔢 原子数 <b>{d['n']}</b>　·　🤝 配位数 <b>{d['cn']}</b>　·　📦 致密度 <b>{d['k']}</b></span><br>"
-            f"<span style='color:#7A8698;font-size:13px'>{d['desc']}</span></div>",
-            unsafe_allow_html=True,
-        )
-        st.caption("💡 鼠标拖拽旋转 · 滚轮缩放 · 悬停查看原子坐标；移动端可双指缩放，建议 PC 端查看效果最佳。")
+        if show_3d:
+            struct = st.radio(
+                "选择晶体结构", list(CRYSTALS.keys()),
+                horizontal=True, label_visibility="collapsed",
+            )
+            d = CRYSTALS[struct]
+            st.plotly_chart(_crystal_fig(struct, d["atoms"], d["verts"], d["edges"], d["R"], d["aspect"]))
+            st.markdown(
+                f"<div style='background:rgba(255,255,255,0.72);border:1px solid #DFEAD4;border-radius:16px;"
+                f"backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);"
+                f"padding:14px 18px;margin-top:6px'>"
+                f"<span style='font-size:16px;font-weight:700;color:#41534A'>{d['name']}</span><br>"
+                f"<span style='font-size:15px;color:#4A5568'>"
+                f"🔢 原子数 <b>{d['n']}</b>　·　🤝 配位数 <b>{d['cn']}</b>　·　📦 致密度 <b>{d['k']}</b></span><br>"
+                f"<span style='color:#7A8698;font-size:13px'>{d['desc']}</span></div>",
+                unsafe_allow_html=True,
+            )
+            st.caption("💡 鼠标拖拽旋转 · 滚轮缩放 · 悬停查看原子坐标；移动端可双指缩放，建议 PC 端查看效果最佳。")
+        else:
+            st.caption("👉 点上面的开关即可加载 3D 晶体模型（BCC / FCC / HCP）。")
 
     keyword = st.text_input("🔎 搜索知识点", placeholder="输入关键词，如：加工硬化 / 杠杆定律 / 扩散 / 硅酸盐")
 
@@ -1055,7 +1063,7 @@ else:
 # ---------- 页脚 ----------
 st.markdown(
     "<div style='text-align:center;padding:26px 0 6px;color:#9AA3B2;font-size:14px;'>"
-    "<div style='font-weight:700;color:#5B6779;font-size:15px;'>📚 803 材料科学基础 · 知识库小助手</div>"
+    "<div style='font-weight:700;color:#5B6779;font-size:15px;'>📚 材料科学基础 · 知识库小助手</div>"
     "<div style='margin-top:6px;'>陪你一步一步，把基础打牢，考研上岸 🌟</div>"
     "</div>",
     unsafe_allow_html=True,
