@@ -520,6 +520,86 @@ CRYSTALS = {
 }
 
 
+def _fec_diagram_fig():
+    """Fe-Fe₃C 亚稳系相图（二维示意）：关键点、关键线、相区、三相反应标注。"""
+    PT = {
+        "A": (0.0, 1538), "N": (0.0, 1394), "G": (0.0, 912), "Q": (0.0008, 20),
+        "H": (0.09, 1495), "J": (0.17, 1495), "B": (0.53, 1495),
+        "P": (0.0218, 727), "S": (0.77, 727),
+        "E": (2.11, 1148), "C": (4.30, 1148), "F": (6.69, 1148),
+        "K": (6.69, 727), "D": (6.69, 1227),
+    }
+    C_LINE, C_HOR, C_SOLID, C_DASH = "#C9D6E8", "#FFD166", "#7FB3F0", "#8A93A6"
+
+    def seg(a, b, color=C_LINE, w=2.4, dash=None):
+        return go.Scatter(x=[PT[a][0], PT[b][0]], y=[PT[a][1], PT[b][1]],
+                          mode="lines", line=dict(color=color, width=w, dash=dash),
+                          hoverinfo="skip", showlegend=False)
+
+    fig = go.Figure()
+    # 液相线 ABCD + 固相线 AHJE
+    for a, b in [("A", "B"), ("B", "C"), ("C", "D"), ("A", "H"), ("H", "J"), ("J", "E")]:
+        fig.add_trace(seg(a, b, C_LINE))
+    # 三条三相平衡水平线
+    fig.add_trace(seg("H", "B", C_HOR, 3.0))   # 包晶线 HJB（1495℃）
+    fig.add_trace(seg("E", "F", C_HOR, 3.0))   # 共晶线 ECF（1148℃）
+    fig.add_trace(seg("P", "K", C_HOR, 3.0))   # 共析线 PSK（727℃）
+    # 固态转变线
+    for a, b in [("N", "H"), ("N", "J"), ("G", "S"), ("G", "P"), ("E", "S"), ("P", "Q")]:
+        fig.add_trace(seg(a, b, C_SOLID, 2.0))
+    # Fe₃C 成分竖线 + 磁性转变线 A2（770℃，虚线）
+    fig.add_trace(seg("K", "D", C_DASH, 1.8))
+    fig.add_trace(go.Scatter(x=[0, 0.53], y=[770, 770], mode="lines",
+                             line=dict(color=C_DASH, width=1.5, dash="dot"),
+                             hoverinfo="skip", showlegend=False))
+
+    # 关键点
+    keys = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "N", "P", "S"]
+    fig.add_trace(go.Scatter(
+        x=[PT[k][0] for k in keys], y=[PT[k][1] for k in keys],
+        mode="markers+text", text=keys, textposition="top center",
+        textfont=dict(color="#FFD166", size=13),
+        marker=dict(color="#FFD166", size=6, line=dict(color="#1B2F52", width=1.5)),
+        hoverinfo="skip", showlegend=False))
+
+    # 相区标注
+    phase = [
+        (3.6, 1470, "L（液相）", "#EAF0F8"),
+        (0.04, 1525, "L + δ", "#BFD4EE"),
+        (1.5, 1330, "L + γ", "#BFD4EE"),
+        (5.6, 1170, "L + Fe₃C", "#BFD4EE"),
+        (1.1, 1050, "γ（奥氏体）", "#9FE8C5"),
+        (3.6, 950, "γ + Fe₃C", "#BFD4EE"),
+        (0.35, 780, "α + γ", "#BFD4EE"),
+        (0.015, 560, "α", "#9FE8C5"),
+        (3.4, 400, "α + Fe₃C", "#BFD4EE"),
+        (6.55, 620, "Fe₃C", "#FFB3C1"),
+    ]
+    for x, y, t, c in phase:
+        fig.add_annotation(x=x, y=y, text=t, showarrow=False,
+                           font=dict(color=c, size=13), bgcolor="rgba(27,47,82,0.55)")
+
+    # 三相反应标注
+    fig.add_annotation(x=0.20, y=1495, text="包晶 L + δ → γ（1495℃）", showarrow=False,
+                       xanchor="left", yanchor="bottom", font=dict(color="#F15FA6", size=12))
+    fig.add_annotation(x=4.35, y=1148, text="共晶 L → γ + Fe₃C（1148℃）→ 莱氏体", showarrow=False,
+                       xanchor="left", yanchor="bottom", font=dict(color="#F15FA6", size=12))
+    fig.add_annotation(x=0.80, y=727, text="共析 γ → α + Fe₃C（727℃）→ 珠光体", showarrow=False,
+                       xanchor="left", yanchor="top", font=dict(color="#F15FA6", size=12))
+
+    fig.update_layout(
+        title=dict(text="Fe-Fe₃C 亚稳系相图", font=dict(size=18, color="#EAF0F8")),
+        margin=dict(l=10, r=10, t=46, b=10),
+        paper_bgcolor="#1B2F52", plot_bgcolor="#1B2F52",
+        xaxis=dict(title=dict(text="含碳量 / wt%C", font=dict(color="#D6E2F0")),
+                   range=[0, 6.85], tickfont=dict(color="#D6E2F0"), gridcolor="#2C4268"),
+        yaxis=dict(title=dict(text="温度 / ℃", font=dict(color="#D6E2F0")),
+                   range=[0, 1620], tickfont=dict(color="#D6E2F0"), gridcolor="#2C4268"),
+        height=560,
+    )
+    return fig
+
+
 # ================= 全局卡通样式 =================
 CSS = """
 <style>
@@ -849,6 +929,11 @@ if nav == "🗺️ 知识地图":
             st.caption("💡 鼠标拖拽旋转 · 滚轮缩放 · 悬停查看原子坐标；移动端可双指缩放，建议 PC 端查看效果最佳。")
         else:
             st.caption("👉 点上面的开关即可加载 3D 晶体模型（BCC / FCC / HCP）。")
+
+    # ---- 铁碳相图（Fe-Fe₃C 亚稳系，2D 轻量图，默认折叠）----
+    with st.expander("🌡️ 铁碳相图（Fe-Fe₃C 亚稳系）", expanded=False):
+        st.plotly_chart(_fec_diagram_fig())
+        st.caption("💡 C 共晶点(1148℃·4.3%C)→莱氏体；S 共析点(727℃·0.77%C)→珠光体。三条水平线：包晶 1495℃、共晶 1148℃、共析 727℃。对应本章「铁碳合金相图」系列卡片。")
 
     keyword = st.text_input("🔎 搜索知识点", placeholder="输入关键词，如：加工硬化 / 杠杆定律 / 扩散 / 硅酸盐")
 

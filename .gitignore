@@ -17,6 +17,7 @@ gen_calc_cards.py
 generate_quiz.py
 rembg_cutout.py
 retouch_assets.py
+add_fec_cards.py
 
 # ===== 未使用的实验性图片 =====
 mascot_bidu.png
