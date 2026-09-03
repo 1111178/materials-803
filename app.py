@@ -69,6 +69,15 @@ def _env_or_secret(name: str) -> str:
     return os.environ.get(name, "")
 
 
+# ================= 0. 激活码 =================
+def load_activation_codes() -> set:
+    """读取有效激活码：优先 st.secrets / 环境变量 ACTIVATION_CODES（逗号分隔）。"""
+    raw = _env_or_secret("ACTIVATION_CODES")
+    if not raw:
+        return set()
+    return {c.strip() for c in raw.replace("，", ",").split(",") if c.strip()}
+
+
 # ================= 1. 检索分词（字符 n-gram） =================
 def _clean(text: str) -> str:
     """去掉空白、Markdown 标记与常见符号，保留中英文与数字。"""
@@ -385,67 +394,134 @@ def show_card(c):
         render_md(c["example"])
 
 
-# ================= 7. 晶体结构三维可视化（Plotly） =================
-# 原子配色（深蓝底上的亮色原子 + 浅色描边，卡通感清晰可见）：
-# 角原子=亮天蓝，体心=亮橙，面心=亮绿，HCP 中层=亮粉
-_CRYSTAL_COLOR = {
-    "角原子": "#4D9BFF",
-    "体心原子": "#FF8A3D",
-    "面心原子": "#2FCB74",
-    "底面心原子": "#2FCB74",
-    "中层原子": "#F15FA6",
+# ================= 7. 晶体结构三维可视化 =================
+# 3Dmol.js 真·3D 球体渲染。支持：
+#  - 9 类视图：BCC / FCC / HCP / 金刚石 / 闪锌矿 ZnS / NaCl / CsCl / 石墨 / FCC-HCP 密排堆垛对比
+#  - 教学标注开关：近邻/配位连线、密排面高亮、尺寸相切关系（琥珀色/粉色线条）
+#  - 3Dmol.js 走多 CDN 备用加载，网络不佳时不易白屏
+# 原子/角色配色（浅色底上的高饱和色）
+_ATOM_C = {
+    "角原子": "#3B82F6", "体心原子": "#F97316", "面心原子": "#22C55E",
+    "底面心原子": "#22C55E", "中层原子": "#EC4899",
+    "副A": "#3B82F6", "副B": "#A78BFA",       # 金刚石/闪锌矿里两个互穿副晶格（图例会注明二者可能同元素）
+    "Na": "#2563EB", "Cl": "#16A34A", "Cs": "#F97316",
+    "Zn": "#3B82F6", "S": "#F59E0B",
+    "C·A层": "#475569", "C·B层": "#94A3B8",  # 石墨两层
 }
-_CRYSTAL_RIM = "#EAF3FF"   # 深蓝底上的浅色描边（发光感卡通描边）
+_FRAME_C = "#9AA7B8"   # 晶胞边框
+_TEACH_C = "#F59E0B"   # 教学连线：近邻 / 配位 / 相切关系
+_PLANE_C = "#F15FA6"   # 密排面高亮
+_BG_C = "#F8FAFC"      # 背景（浅色，与整站一致）
+_SPH_OPACITY = 0.9
+
+# 3Dmol.js 备用加载源（依次尝试，直到成功）
+_JQUERY_SRC = [
+    "https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js",
+    "https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js",
+    "https://unpkg.com/jquery@3.6.0/dist/jquery.min.js",
+]
+_3DMOL_SRC = [
+    "https://cdn.jsdelivr.net/npm/3dmol@2.4.0/build/3Dmol-min.js",
+    "https://cdn.bootcdn.net/ajax/libs/3Dmol/2.4.0/3Dmol-min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.0/3Dmol-min.js",
+    "https://unpkg.com/3dmol@2.4.0/build/3Dmol-min.js",
+    "https://3Dmol.org/build/3Dmol-min.js",
+]
+
+_VIEWER_HTML = """
+<div id="__ROOT__" style="width:100%;display:flex;gap:8px;align-items:stretch;"></div>
+<script>
+(function(){
+  var PANELS = __PANELS__;
+  var root = document.getElementById("__ROOT__");
+  function loadSeq(urls, ok, i){
+    i = i || 0;
+    if (i >= urls.length) { ok(false); return; }
+    var s = document.createElement("script");
+    s.src = urls[i];
+    s.onload = function(){ ok(true); };
+    s.onerror = function(){ loadSeq(urls, ok, i + 1); };
+    document.head.appendChild(s);
+  }
+  function makeViewers(){
+    PANELS.forEach(function(p, idx){
+      var wrap = document.createElement("div");
+      wrap.style.cssText = "flex:1 1 0%;min-width:0;position:relative;";
+      if (p.title) {
+        var t = document.createElement("div");
+        t.style.cssText = "text-align:center;font-size:13px;font-weight:700;color:#41534A;padding:2px 0 4px;";
+        t.textContent = p.title;
+        wrap.appendChild(t);
+      }
+      var box = document.createElement("div");
+      box.id = "__ROOT__" + idx;
+      box.style.cssText = "width:100%;height:" + (p.h || 480) + "px;position:relative;";
+      wrap.appendChild(box);
+      root.appendChild(wrap);
+      var viewer = $3Dmol.createViewer(box, { backgroundColor: "__BG__" });
+      var i, s, l;
+      for (i = 0; i < p.spheres.length; i++) {
+        s = p.spheres[i];
+        viewer.addSphere({ center: {x: s.x, y: s.y, z: s.z}, radius: s.r,
+                           color: s.c, opacity: (s.o == null ? 0.9 : s.o) });
+      }
+      function drawLine(l){
+        viewer.addCylinder({ start: {x: l.x1, y: l.y1, z: l.z1},
+                             end: {x: l.x2, y: l.y2, z: l.z2},
+                             radius: l.r || 0.03, color: l.c || "#9AA7B8" });
+      }
+      var groups = [p.frame, p.teach, p.always];
+      for (i = 0; i < groups.length; i++) {
+        var arr = groups[i] || [];
+        for (l = 0; l < arr.length; l++) drawLine(arr[l]);
+      }
+      viewer.zoomTo();
+      viewer.render();
+      viewer.zoom(1.12);
+    });
+  }
+  function boot(){
+    if (window.jQuery && window.$3Dmol) { makeViewers(); return; }
+    setTimeout(function(){
+      if (window.jQuery && window.$3Dmol) { makeViewers(); }
+    }, 800);
+  }
+  if (window.jQuery && window.$3Dmol) { makeViewers(); return; }
+  loadSeq(_JQ, function(jqOk){ loadSeq(_DM, function(){ boot(); }); });
+})();
+</script>
+"""
 
 
-def _crystal_fig(title, atoms, verts, edges, R, aspect="cube"):
-    """生成可旋转/缩放的三维晶体图。atoms=[(x,y,z,位置类型)...]，verts={名:(x,y,z)}，edges=[(名,名)...]"""
-    ex, ey, ez = [], [], []
-    for a, b in edges:
-        ex += [verts[a][0], verts[b][0], None]
-        ey += [verts[a][1], verts[b][1], None]
-        ez += [verts[a][2], verts[b][2], None]
-
-    fig = go.Figure()
-    # 晶胞边框（线条）
-    fig.add_trace(go.Scatter3d(
-        x=ex, y=ey, z=ez, mode="lines",
-        line=dict(color="#C9D6E8", width=6),
-        hoverinfo="skip", showlegend=False,
-    ))
-    # 原子按「位置类型」分组，同类同色，悬停显示坐标
-    groups = {}
-    for x, y, z, name in atoms:
-        groups.setdefault(name, []).append((x, y, z))
-    for name, pts in groups.items():
-        fig.add_trace(go.Scatter3d(
-            x=[p[0] for p in pts], y=[p[1] for p in pts], z=[p[2] for p in pts],
-            mode="markers", name=name,
-            marker=dict(size=2 * R, sizemode="diameter",
-                        color=_CRYSTAL_COLOR.get(name, "#4D9BFF"),
-                        opacity=1.0,
-                        line=dict(color=_CRYSTAL_RIM, width=2)),
-            text=[f"{name} ({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f})" for p in pts],
-            hovertemplate="<b>%{text}</b><extra></extra>",
-        ))
-
-    fig.update_layout(
-        title=dict(text=title, font=dict(size=16, color="#EAF0F8")),
-        showlegend=True,
-        legend=dict(orientation="h", y=1.04, x=0, font=dict(color="#D6E2F0")),
-        margin=dict(l=0, r=0, t=46, b=0),
-        paper_bgcolor="#1B2F52",
-        scene=dict(
-            bgcolor="#1B2F52",
-            xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
-            aspectmode=aspect,
-            camera=dict(eye=dict(x=1.35, y=1.35, z=1.05)),
-        ),
-        height=520,
-    )
-    return fig
+def _cyl(p, q, color=_TEACH_C, r=0.03):
+    """3D 圆柱（线段）对象。"""
+    return {"x1": round(p[0], 4), "y1": round(p[1], 4), "z1": round(p[2], 4),
+            "x2": round(q[0], 4), "y2": round(q[1], 4), "z2": round(q[2], 4),
+            "c": color, "r": round(r, 4)}
 
 
+def _sph(xyz, r, role, opacity=None):
+    x, y, z = xyz
+    d = {"x": round(x, 4), "y": round(y, 4), "z": round(z, 4),
+         "r": round(r, 4), "c": _ATOM_C.get(role, "#3B82F6"), "role": role}
+    if opacity is not None:
+        d["o"] = opacity
+    return d
+
+
+def _render3d(panels, height=540, jquery=None, threedmol=None):
+    """把若干 panel（{title, spheres, frame, teach, always, h}）渲染成一个可拖拽旋转的 3D 页。"""
+    html = (_VIEWER_HTML
+            .replace("__PANELS__", json.dumps(panels, ensure_ascii=False))
+            .replace("__ROOT__", "c3d_" + str(abs(hash(json.dumps(panels)) ) % (10 ** 8)))
+            .replace("__BG__", _BG_C)
+            .replace("_JQ", json.dumps(jquery or _JQUERY_SRC))
+            .replace("_DM", json.dumps(threedmol or _3DMOL_SRC)))
+    return html
+
+
+# ---- 场景构造小工具 ----
 def _cube():
     verts = {
         "000": (0, 0, 0), "100": (1, 0, 0), "010": (0, 1, 0), "001": (0, 0, 1),
@@ -507,16 +583,275 @@ def _hcp():
             "R": 0.5, "aspect": "cube"}
 
 
-CRYSTALS = {
-    "体心立方 BCC": dict(
-        _bcc(), name="体心立方 BCC", n="2（8×1/8 + 1）", cn="8", k="0.68（68%）",
-        desc="立方体 8 个角 + 体心各一个原子。原子沿体对角线相切（4r=√3·a），典型金属：α-Fe、Cr、W、Mo、V。"),
-    "面心立方 FCC": dict(
-        _fcc(), name="面心立方 FCC", n="4（8×1/8 + 6×1/2）", cn="12", k="0.74（74%）",
-        desc="立方体 8 个角 + 6 个面心各一个原子。原子沿面对角线相切（4r=√2·a），典型金属：γ-Fe、Al、Cu、Ni、Au、Ag。"),
-    "密排六方 HCP": dict(
-        _hcp(), name="密排六方 HCP", n="6（12×1/6 + 2×1/2 + 3）", cn="12", k="0.74（74%）",
-        desc="六方柱上下面各 6 个角 + 上下底面心 + 中层 3 个原子。理想轴比 c/a=1.633，典型金属：Mg、Zn、Ti、α-Zr、Be。"),
+def _cube_frame(verts, edges, color=_FRAME_C, r=0.022):
+    return [_cyl(verts[a], verts[b], color, r) for a, b in edges]
+
+
+# 共用的三个位置集合（金刚石 / 闪锌矿 / NaCl / CsCl 都会用到）
+_CORNERS = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+            (1, 1, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1)]
+_FACES = [(0.5, 0.5, 0), (0.5, 0.5, 1), (0.5, 0, 0.5),
+          (0.5, 1, 0.5), (0, 0.5, 0.5), (1, 0.5, 0.5)]
+_TETRA = [(0.25, 0.25, 0.25), (0.25, 0.75, 0.75),
+          (0.75, 0.25, 0.75), (0.75, 0.75, 0.25)]
+
+
+def _nn_pairs(pos, dist, tol=0.05):
+    """返回所有「距离 ≈ dist」的原子对下标，用于自动找最近邻连线。"""
+    out = []
+    for i in range(len(pos)):
+        for j in range(i + 1, len(pos)):
+            d = math.dist(pos[i], pos[j])
+            if abs(d - dist) <= tol:
+                out.append((i, j))
+    return out
+
+
+# ---- 单个结构场景 ----
+def _scene_bcc(show_frame=True, teach=True):
+    d = _bcc()
+    verts, edges = d["verts"], d["edges"]
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = [_sph(v, d["R"] * 0.95, role) for v, role in [(verts[k], "角原子") for k in verts]]
+    spheres += [_sph((0.5, 0.5, 0.5), d["R"] * 1.0, "体心原子")]
+    teach_lines = []
+    if teach:  # 体心 → 8 个角：最近邻，配位数 8（沿体对角线相切 4r=√3·a）
+        for k, v in verts.items():
+            teach_lines.append(_cyl((0.5, 0.5, 0.5), v, _TEACH_C, 0.045))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_fcc(show_frame=True, teach=True):
+    d = _fcc()
+    verts, edges = d["verts"], d["edges"]
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = []
+    for k, v in verts.items():
+        spheres.append(_sph(v, d["R"] * 0.95, "角原子"))
+    for f in _FACES:
+        spheres.append(_sph(f, d["R"] * 0.95, "面心原子"))
+    teach_lines = []
+    if teach:
+        # (111) 密排面：x+y+z=1 上的 3 个角 + 3 个面心，围成三角形网格
+        p111 = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)]
+        plane_edges = [((1, 0, 0), (0.5, 0.5, 0)), ((1, 0, 0), (0.5, 0, 0.5)),
+                       ((0, 1, 0), (0.5, 0.5, 0)), ((0, 1, 0), (0, 0.5, 0.5)),
+                       ((0, 0, 1), (0.5, 0, 0.5)), ((0, 0, 1), (0, 0.5, 0.5))]
+        for a, b in plane_edges:
+            teach_lines.append(_cyl(a, b, _PLANE_C, 0.035))
+        # 面对角线（相切关系 4r=√2·a）
+        teach_lines.append(_cyl((0, 0, 0), (1, 1, 0), _TEACH_C, 0.05))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_hcp(show_frame=True, teach=True):
+    d = _hcp()
+    verts, edges = d["verts"], d["edges"]
+    frame = _cube_frame(verts, edges, r=0.018) if show_frame else []
+    spheres = [_sph(v, d["R"] * 0.9, role) for v, role in d["atoms"]]
+    teach_lines = []
+    if teach:
+        # 底面 (0001) 密排面：底面中心 → 底面 6 个角（层内最近邻）
+        for b in range(6):
+            v = verts[f"b{b}"]
+            teach_lines.append(_cyl((0, 0, 0), v, _PLANE_C, 0.03))
+            # 底面六边形轮廓高亮
+            teach_lines.append(_cyl(v, verts[f"b{(b + 1) % 6}"], _PLANE_C, 0.02))
+        # 一个 a 方向最近邻（相切 2r=a）示例
+        teach_lines.append(_cyl((0, 0, 0), (1, 0, 0), _TEACH_C, 0.06))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_diamond(show_frame=True, teach=True):
+    """金刚石结构：FCC(副A) + 4 个四面体间隙(副B)，两者同为 C，用颜色区分两个互穿副晶格。"""
+    verts, edges = _cube()
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = [_sph(p, 0.185, "副A") for p in (_CORNERS + _FACES)]
+    spheres += [_sph(p, 0.185, "副B") for p in _TETRA]
+    teach_lines = []
+    pos = _CORNERS + _FACES + _TETRA
+    if teach:
+        for i, j in _nn_pairs(pos, math.sqrt(3) / 4):
+            teach_lines.append(_cyl(pos[i], pos[j], _TEACH_C, 0.035))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_znS(show_frame=True, teach=True):
+    """闪锌矿 ZnS：S²⁻ 占据 FCC 位(大、黄)，Zn²⁺ 占据一半四面体间隙(小、蓝)，配位数 4。"""
+    verts, edges = _cube()
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = [_sph(p, 0.26, "S") for p in (_CORNERS + _FACES)]
+    spheres += [_sph(p, 0.15, "Zn") for p in _TETRA]
+    teach_lines = []
+    pos = _CORNERS + _FACES + _TETRA
+    if teach:
+        for i, j in _nn_pairs(pos, math.sqrt(3) / 4):
+            teach_lines.append(_cyl(pos[i], pos[j], _TEACH_C, 0.03))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_nacl(show_frame=True, teach=True):
+    """NaCl（岩盐）：Cl⁻ 在 FCC 位(绿、大)，Na⁺ 在棱心+体心(蓝、小)，配位数 6。"""
+    verts, edges = _cube()
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = [_sph(p, 0.28, "Cl") for p in (_CORNERS + _FACES)]
+    edge_c = []
+    for a, b in [((0.5, 0, 0), (0.5, 0, 1)), ((0.5, 1, 0), (0.5, 1, 1)),
+                 ((0, 0.5, 0), (0, 0.5, 1)), ((1, 0.5, 0), (1, 0.5, 1)),
+                 ((0, 0, 0.5), (1, 0, 0.5)), ((0, 1, 0.5), (1, 1, 0.5))]:
+        edge_c += [a, b]
+    spheres += [_sph(p, 0.15, "Na") for p in edge_c]
+    spheres.append(_sph((0.5, 0.5, 0.5), 0.17, "Na"))
+    teach_lines = []
+    if teach:  # 体心 Na⁺ 与 6 个面心 Cl⁻：八面体配位，配位数 6
+        for f in _FACES:
+            teach_lines.append(_cyl((0.5, 0.5, 0.5), f, _TEACH_C, 0.03))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _scene_cscl(show_frame=True, teach=True):
+    """CsCl：Cs⁺ 在 8 个角、Cl⁻ 在体心，配位数 8。"""
+    verts, edges = _cube()
+    frame = _cube_frame(verts, edges) if show_frame else []
+    spheres = [_sph(p, 0.30, "Cs") for p in _CORNERS]
+    spheres.append(_sph((0.5, 0.5, 0.5), 0.28, "Cl"))
+    teach_lines = []
+    if teach:  # 体心 Cl⁻ → 8 个角 Cs⁺
+        for p in _CORNERS:
+            teach_lines.append(_cyl((0.5, 0.5, 0.5), p, _TEACH_C, 0.03))
+    return {"title": None, "spheres": spheres, "frame": frame,
+            "teach": teach_lines, "always": [], "h": 500}
+
+
+def _honeycomb_points(R):
+    """生成一层石墨烯（六方蜂窝）的原子坐标（键长=1）。"""
+    s3 = math.sqrt(3)
+    e1 = (s3, 0.0)
+    e2 = (s3 / 2, 1.5)
+    b0 = (s3 / 2, 0.5)
+    pts = []
+    for i in range(-5, 6):
+        for j in range(-5, 6):
+            x = i * e1[0] + j * e2[0]
+            y = i * e1[1] + j * e2[1]
+            if x * x + y * y <= R * R:
+                pts.append((x, y, 0.0))
+            xb = x + b0[0]
+            yb = y + b0[1]
+            if xb * xb + yb * yb <= R * R:
+                pts.append((xb, yb, 0.0))
+    # 去重（理论上不会有，保险起见）
+    pts = list(dict.fromkeys(pts))
+    return pts
+
+
+def _scene_graphite(show_frame=True, teach=True):
+    """石墨：两层六方蜂窝按 AB 堆垛，层内共价键始终画出，层间距示意范德华间隙。"""
+    gap = 2.2
+    s3 = math.sqrt(3)
+    layer1 = _honeycomb_points(3.3)
+    # AB 堆垛：第二层平移使原子落在第一层六边形中心（空心）上方
+    hollow = (0.0, 1.0)
+    layer2 = [(x + hollow[0], y + hollow[1], gap) for (x, y, _) in layer1]
+    spheres = [_sph(p, 0.30, "C·A层", 0.95) for p in layer1]
+    spheres += [_sph(p, 0.30, "C·B层", 0.95) for p in layer2]
+
+    def inplane(pts):
+        lines, pos = [], [p[:2] for p in pts]
+        for i in range(len(pos)):
+            for j in range(i + 1, len(pos)):
+                if abs(math.dist(pos[i], pos[j]) - 1.0) <= 0.05:
+                    lines.append(_cyl(pts[i], pts[j], "#475569", 0.045))
+        return lines
+
+    always = inplane(layer1) + inplane(layer2)
+    # 三条淡色竖直引导线示意层间距（范德华间隙，远大于层内键长）
+    for x, y in [(0, 0), (s3, 0), (s3 / 2, 1.5)]:
+        if any(abs(a[0] - x) < 1e-6 and abs(a[1] - y) < 1e-6 for a in [p[:2] for p in layer1]):
+            always.append(_cyl((x, y, 0), (x, y, gap), "#CBD5E1", 0.02))
+    return {"title": None, "spheres": spheres, "frame": [],
+            "teach": always, "always": [], "h": 500}
+
+
+def _cp_layers_compare():
+    """FCC(ABC) vs HCP(ABAB) 密排堆垛对比：两层面板，各 3 层密排球。"""
+    s3 = math.sqrt(3)
+    h = math.sqrt(2.0 / 3.0)          # 相邻密排面间距（密排球半径 0.5 时）
+    r = 0.42
+    Ha = (0.5, s3 / 6)                # 第一类三角空隙
+    Hb = (0.0, s3 / 3)                # 第二类三角空隙
+
+    def layer(z, off, color, role):
+        sph = []
+        for i in range(-3, 4):
+            for j in range(-3, 4):
+                if max(abs(i), abs(j), abs(i + j)) > 2:
+                    continue
+                x = i + j * 0.5 + off[0]
+                y = j * s3 / 2 + off[1]
+                sph.append(_sph((x, y, z), r, role))
+        # 所有球统一换色（role 只用于图例）
+        for s in sph:
+            s["c"] = color
+        return sph
+
+    fcc = {"title": "FCC：ABC ABC…",
+           "spheres": layer(0, (0, 0), "#3B82F6", "密排面①")
+                      + layer(h, Ha, "#22C55E", "密排面②")
+                      + layer(2 * h, Hb, "#EC4899", "密排面③"),
+           "frame": [], "teach": [], "always": [], "h": 470}
+    hcp = {"title": "HCP：AB AB…（第 1、3 层正对）",
+           "spheres": layer(0, (0, 0), "#3B82F6", "密排面①")
+                      + layer(h, Ha, "#22C55E", "密排面②")
+                      + layer(2 * h, (0, 0), "#F97316", "密排面③"),
+           "frame": [], "teach": [], "always": [], "h": 470}
+    return [fcc, hcp]
+
+
+CRYSTAL_ORDER = [
+    "体心立方 BCC", "面心立方 FCC", "密排六方 HCP",
+    "金刚石结构", "闪锌矿 ZnS", "NaCl 岩盐", "CsCl", "石墨（层状）",
+    "FCC vs HCP 密排堆垛",
+]
+
+# 结构 → 信息卡（n=单胞原子数 / cn=配位数 / k=致密度 / desc=简介）
+CRYSTAL_INFO = {
+    "体心立方 BCC": dict(n="2（8×1/8 + 1）", cn="8", k="0.68（68%）",
+        desc="立方体 8 个角 + 体心各一个原子。原子沿体对角线相切（4r=√3·a）。典型金属：α-Fe、Cr、W、Mo、V。"),
+    "面心立方 FCC": dict(n="4（8×1/8 + 6×1/2）", cn="12", k="0.74（74%）",
+        desc="立方体 8 个角 + 6 个面心各一个原子。原子沿面对角线相切（4r=√2·a），(111) 为密排面。典型金属：γ-Fe、Al、Cu、Ni、Au、Ag。"),
+    "密排六方 HCP": dict(n="6（12×1/6 + 2×1/2 + 3）", cn="12", k="0.74（74%）",
+        desc="六方柱上下面各 6 个角 + 上下底面心 + 中层 3 个原子。理想轴比 c/a=1.633，(0001) 为密排面。典型金属：Mg、Zn、Ti、α-Zr、Be。"),
+    "金刚石结构": dict(n="8（8 个 C：FCC + 4 个四面体间隙）", cn="4", k="0.34（34%）",
+        desc="两个互相穿插的 FCC 副晶格，沿体对角线错开 a/4。每个 C 与 4 个 C 以 sp³ 共价键结合（四面体）。结构同 Si、Ge、α-Sn。图中用两色区分两个副晶格，实际同为 C。"),
+    "闪锌矿 ZnS": dict(n="4 Zn + 4 S", cn="4（Zn、S 均 4）", k="—",
+        desc="S²⁻ 组成 FCC，Zn²⁺ 占据其中一半四面体间隙，与金刚石同构但两种原子不同。典型化合物半导体，如 GaAs、InP 同属此结构。"),
+    "NaCl 岩盐": dict(n="4 Na⁺ + 4 Cl⁻", cn="6（正、负离子均 6）", k="—",
+        desc="Cl⁻ 组成 FCC，Na⁺ 填满全部八面体间隙；两种离子都按简单立方排布、彼此交替。典型离子晶体：NaCl、KCl、MgO 等。"),
+    "CsCl": dict(n="1 Cs⁺ + 1 Cl⁻", cn="8（正、负离子均 8）", k="—",
+        desc="Cs⁺ 与 Cl⁻ 各占一套简单立方，体心与角上不同离子。注意它不是体心立方——两类离子不同。典型：CsCl、CsBr、CsI。"),
+    "石墨（层状）": dict(n="层状，每层无限延伸", cn="3（层内）+ 层间范德华力", k="—",
+        desc="同一层内 C 以 sp² 共价键连成六方蜂窝（键长短、强），层间靠范德华力结合（间距大、弱），故质软可作润滑剂、能导电。层间按 ABAB 堆垛，图中两层为示意。"),
+    "FCC vs HCP 密排堆垛": dict(n="—", cn="12", k="同为 0.74",
+        desc="最密排原子面按不同顺序堆叠：FCC 是 ABCABC…（第 1、4 层正对），HCP 是 ABAB…（第 1、3 层正对）。致密度与配位数完全相同，只是第三层落位不同，导致宏观对称性不同。"),
+}
+
+CRYSTAL_SCENE = {
+    "体心立方 BCC": _scene_bcc,
+    "面心立方 FCC": _scene_fcc,
+    "密排六方 HCP": _scene_hcp,
+    "金刚石结构": _scene_diamond,
+    "闪锌矿 ZnS": _scene_znS,
+    "NaCl 岩盐": _scene_nacl,
+    "CsCl": _scene_cscl,
+    "石墨（层状）": _scene_graphite,
+    "FCC vs HCP 密排堆垛": _cp_layers_compare,
 }
 
 
@@ -903,32 +1238,64 @@ if nav == "🗺️ 知识地图":
     st.caption(f"共 **{len(chapters)}** 章 · **{len(cards)}** 个知识点，点开章节再点知识点即可查看卡片")
 
     # ---- 晶体结构 3D 可视化（懒加载：默认不渲染，避免移动端首屏卡顿）----
-    with st.expander("🔮 晶体结构 3D 可视化（体心立方 · 面心立方 · 密排六方）", expanded=False):
+    def _legend_html(spheres, teach):
+        chips = []
+        seen = {}
+        for s in spheres:
+            key = (s["c"], s["role"])
+            if key in seen:
+                continue
+            seen[key] = 1
+            chips.append(f"<span style='color:{s['c']}'>●</span> {s['role']}")
+        if teach:
+            chips += [f"<span style='color:{_TEACH_C}'>●</span> 教学连线",
+                      f"<span style='color:{_PLANE_C}'>●</span> 密排面"]
+        return ("<div style='font-size:13px;color:#7A8698;line-height:1.9'>" + "　".join(chips) + "</div>")
+
+    with st.expander("🔮 晶体结构 3D 可视化（BCC · FCC · HCP · 金刚石 · ZnS · NaCl · CsCl · 石墨 · 密排堆垛）", expanded=False):
         show_3d = st.toggle(
             "加载 3D 模型",
             value=False,
             help="3D 模型较重，手机端建议保持关闭以加快加载；PC 端打开后可拖拽旋转查看",
         )
         if show_3d:
-            struct = st.radio(
-                "选择晶体结构", list(CRYSTALS.keys()),
-                horizontal=True, label_visibility="collapsed",
-            )
-            d = CRYSTALS[struct]
-            st.plotly_chart(_crystal_fig(struct, d["atoms"], d["verts"], d["edges"], d["R"], d["aspect"]))
+            struct = st.selectbox("选择晶体结构", CRYSTAL_ORDER, label_visibility="collapsed")
+            is_cmp = struct == "FCC vs HCP 密排堆垛"
+            if is_cmp:
+                panels = _cp_layers_compare()
+                components.html(_render3d(panels, height=520), height=590)
+            else:
+                cf, ct = st.columns(2)
+                show_frame = cf.toggle("显示晶胞边框", value=True)
+                teach = ct.toggle("教学标注", value=True, help="最近邻/配位连线、密排面、尺寸相切关系")
+                scene = CRYSTAL_SCENE[struct](show_frame=show_frame, teach=teach)
+                components.html(_render3d([scene], height=520), height=580)
+                st.markdown(_legend_html(scene["spheres"], teach), unsafe_allow_html=True)
+
+            info = CRYSTAL_INFO[struct]
             st.markdown(
                 f"<div style='background:rgba(255,255,255,0.72);border:1px solid #DFEAD4;border-radius:16px;"
                 f"backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);"
                 f"padding:14px 18px;margin-top:6px'>"
-                f"<span style='font-size:16px;font-weight:700;color:#41534A'>{d['name']}</span><br>"
+                f"<span style='font-size:16px;font-weight:700;color:#41534A'>{struct}</span><br>"
                 f"<span style='font-size:15px;color:#4A5568'>"
-                f"🔢 原子数 <b>{d['n']}</b>　·　🤝 配位数 <b>{d['cn']}</b>　·　📦 致密度 <b>{d['k']}</b></span><br>"
-                f"<span style='color:#7A8698;font-size:13px'>{d['desc']}</span></div>",
+                f"🔢 原子数 <b>{info['n']}</b>　·　🤝 配位数 <b>{info['cn']}</b>　·　📦 致密度 <b>{info['k']}</b></span><br>"
+                f"<span style='color:#7A8698;font-size:13px'>{info['desc']}</span></div>",
                 unsafe_allow_html=True,
             )
-            st.caption("💡 鼠标拖拽旋转 · 滚轮缩放 · 悬停查看原子坐标；移动端可双指缩放，建议 PC 端查看效果最佳。")
+            if is_cmp:
+                st.markdown(
+                    "<div style='font-size:13px;color:#7A8698;line-height:1.9'>"
+                    "<span style='color:#3B82F6'>●</span> 密排面①　"
+                    "<span style='color:#22C55E'>●</span> 密排面②　"
+                    "<span style='color:#F97316'>●</span> 密排面③（HCP 回到 A）／"
+                    "<span style='color:#EC4899'>●</span> 密排面③（FCC 落 C）"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            st.caption("💡 鼠标拖拽旋转 · 滚轮缩放（手机双指缩放）；球体半透明可透看内部。不同结构的“教学连线”含义不同，见上方图例。建议 PC 端查看。")
         else:
-            st.caption("👉 点上面的开关即可加载 3D 晶体模型（BCC / FCC / HCP）。")
+            st.caption("👉 点上面的开关即可加载 3D 晶体模型（金属 / 共价 / 离子晶体 / 层状结构 / 密排堆垛）。")
 
     # ---- 铁碳相图（Fe-Fe₃C 亚稳系，2D 轻量图，默认折叠）----
     with st.expander("🌡️ 铁碳相图（Fe-Fe₃C 亚稳系）", expanded=False):
@@ -954,6 +1321,21 @@ if nav == "🗺️ 知识地图":
 # ---------- 板块 2：智能问答 ----------
 elif nav == "💬 智能问答":
     st.markdown("### 💬 智能问答")
+
+    # ---- 激活码校验（付费功能；未配置 ACTIVATION_CODES 时默认放行）----
+    _valid_codes = load_activation_codes()
+    if _valid_codes and not st.session_state.get("activated", False):
+        st.info("🔒 智能问答和图片识别需要激活码，请向卖家获取后输入")
+        _code = st.text_input("激活码（6位数字）", max_chars=6, placeholder="例如：123456")
+        if st.button("激活", type="primary"):
+            if _code.strip() in _valid_codes:
+                st.session_state.activated = True
+                st.success("✅ 激活成功！现在可以使用智能问答了")
+                st.rerun()
+            else:
+                st.error("激活码无效，请检查后重试")
+        st.stop()
+
     st.caption("把题目拍下来或直接打字，小老师帮你讲明白～")
 
     uploaded = st.file_uploader("📷 上传题目截图（可选）", type=["png", "jpg", "jpeg"])
