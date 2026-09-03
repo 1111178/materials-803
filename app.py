@@ -1,3 +1,150 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import re
 import random
@@ -399,19 +546,19 @@ def show_card(c):
 #  - 9 类视图：BCC / FCC / HCP / 金刚石 / 闪锌矿 ZnS / NaCl / CsCl / 石墨 / FCC-HCP 密排堆垛对比
 #  - 教学标注开关：近邻/配位连线、密排面高亮、尺寸相切关系（琥珀色/粉色线条）
 #  - 3Dmol.js 走多 CDN 备用加载，网络不佳时不易白屏
-# 原子/角色配色（浅色底上的高饱和色）
+# 原子/角色配色（深海军蓝底上的高饱和亮色，护眼）
 _ATOM_C = {
-    "角原子": "#3B82F6", "体心原子": "#F97316", "面心原子": "#22C55E",
-    "底面心原子": "#22C55E", "中层原子": "#EC4899",
-    "副A": "#3B82F6", "副B": "#A78BFA",       # 金刚石/闪锌矿里两个互穿副晶格（图例会注明二者可能同元素）
-    "Na": "#2563EB", "Cl": "#16A34A", "Cs": "#F97316",
-    "Zn": "#3B82F6", "S": "#F59E0B",
-    "C·A层": "#475569", "C·B层": "#94A3B8",  # 石墨两层
+    "角原子": "#5BB4FF", "体心原子": "#FF9E64", "面心原子": "#43D17C",
+    "底面心原子": "#43D17C", "中层原子": "#F471B5",
+    "副A": "#5BB4FF", "副B": "#C084FC",       # 金刚石/闪锌矿里两个互穿副晶格（图例会注明二者可能同元素）
+    "Na": "#5BB4FF", "Cl": "#43D17C", "Cs": "#FF9E64",
+    "Zn": "#5BB4FF", "S": "#FFC24D",
+    "C·A层": "#A7BBD4", "C·B层": "#6F7F96",  # 石墨两层（亮/暗灰蓝便于区分）
 }
-_FRAME_C = "#9AA7B8"   # 晶胞边框
-_TEACH_C = "#F59E0B"   # 教学连线：近邻 / 配位 / 相切关系
-_PLANE_C = "#F15FA6"   # 密排面高亮
-_BG_C = "#F8FAFC"      # 背景（浅色，与整站一致）
+_FRAME_C = "#A6B8CE"   # 晶胞边框（深底上偏亮）
+_TEACH_C = "#FFB84D"   # 教学连线：近邻 / 配位 / 相切关系
+_PLANE_C = "#FF7AB6"   # 密排面高亮
+_BG_C = "#0B1F3F"      # 背景：深海军蓝，衬托亮色原子
 _SPH_OPACITY = 0.9
 
 # 3Dmol.js 备用加载源（依次尝试，直到成功）
@@ -430,7 +577,7 @@ _3DMOL_SRC = [
 ]
 
 _VIEWER_HTML = """
-<div id="__ROOT__" style="width:100%;display:flex;gap:8px;align-items:stretch;"></div>
+<div id="__ROOT__" style="width:100%;display:flex;gap:10px;align-items:stretch;background:linear-gradient(180deg,#0E2447 0%,#071933 100%);border-radius:16px;padding:12px;box-sizing:border-box;"></div>
 <script>
 (function(){
   var PANELS = __PANELS__;
@@ -450,7 +597,7 @@ _VIEWER_HTML = """
       wrap.style.cssText = "flex:1 1 0%;min-width:0;position:relative;";
       if (p.title) {
         var t = document.createElement("div");
-        t.style.cssText = "text-align:center;font-size:13px;font-weight:700;color:#41534A;padding:2px 0 4px;";
+        t.style.cssText = "text-align:center;font-size:13px;font-weight:700;color:#CFE0F5;padding:2px 0 4px;";
         t.textContent = p.title;
         wrap.appendChild(t);
       }
