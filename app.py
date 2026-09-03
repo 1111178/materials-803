@@ -797,7 +797,7 @@ def _scene_hcp(show_frame=True, teach=True):
     d = _hcp()
     verts, edges = d["verts"], d["edges"]
     frame = _cube_frame(verts, edges, r=0.018) if show_frame else []
-    spheres = [_sph(v, d["R"] * 0.9, role) for v, role in d["atoms"]]
+    spheres = [_sph((x, y, z), d["R"] * 0.9, role) for (x, y, z, role) in d["atoms"]]
     teach_lines = []
     if teach:
         # 底面 (0001) 密排面：底面中心 → 底面 6 个角（层内最近邻）
