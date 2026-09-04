@@ -160,7 +160,6 @@ from collections import Counter
 import requests
 import numpy as np
 import licenses
-import phase_lab
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
@@ -1301,122 +1300,6 @@ def _fec_diagram_fig():
     return fig
 
 
-# ================= 8. 相图实验室（二元相图动态交互实验室） =================
-# 交互整体搬进浏览器本地渲染(components v2)：判相/杠杆/几何在 phase_lab.py,
-# 由 system_spec() 导出 spec 交给 phase_lab_core/ui.js 在 iframe 内本地重画,
-# 拖动滑块/开关/切体系零服务器往返。此段只负责挂载组件 + 底部对照知识卡。
-_LAB_RENDER = None
-_LAB_JS_CORE = None
-_LAB_JS_UI = None
-def _lab_mount():
-    """实验室组件挂载函数（注册一次；core+ui 拼成一个 ES 模块）。失败返回 None，不阻塞页面。"""
-    global _LAB_RENDER, _LAB_JS_CORE, _LAB_JS_UI
-    if _LAB_RENDER is None:
-        try:
-            _here = os.path.dirname(os.path.abspath(__file__))
-            if _LAB_JS_CORE is None:
-                with open(os.path.join(_here, "phase_lab_core.js"), encoding="utf-8") as f:
-                    _LAB_JS_CORE = f.read()
-            if _LAB_JS_UI is None:
-                with open(os.path.join(_here, "phase_lab_ui.js"), encoding="utf-8") as f:
-                    _LAB_JS_UI = f.read()
-            _LAB_RENDER = st.components.v2.component(
-                "m803_lab",
-                js=_LAB_JS_CORE + "\n" + _LAB_JS_UI,
-                isolate_styles=False,
-            )
-        except Exception:
-            _LAB_RENDER = False
-    return _LAB_RENDER or None
-
-
-def _lab_data():
-    """给组件的 payload：全部体系 spec（切体系本地即时换）+ 当前体系 + 每体系记忆位置。"""
-    P = phase_lab
-    lab = st.session_state.setdefault("lab", {"active": P.SYSTEM_ORDER[0], "pos": {}})
-    specs = {}
-    for sid in P.SYSTEM_ORDER:
-        specs[sid] = P.system_spec(sid)
-    return dict(order=P.SYSTEM_ORDER, specs=specs,
-                active=lab.get("active", P.SYSTEM_ORDER[0]),
-                pos=lab.setdefault("pos", {}))
-
-
-def _render_phase_lab():
-    """🧪 相图实验室 = 浏览器本地渲染组件(拖动/开关/预置零往返)+ 底部对照知识卡。
-
-    组件只在「切体系」时上报一次 sid(刷新下方 Fe-C 对照卡)，
-    「滑块松手 / 预置」上报 x/T 以在导航回来时复原位置(只存不重刷)。"""
-    P = phase_lab
-    st.markdown("### 🧪 二元相图动态交互实验室")
-    st.caption("把「成分 / 温度」当作探针，图上实时定位合金状态：自动判所在相区，两相区按"
-               "**杠杆定律**给出两相相对量与 tie line 两端成分。拖动滑块 / 开关 / 切体系都在"
-               "浏览器里即时重画，不再有服务器往返的卡顿感。Fe-Fe₃C 数值权威；其余体系为"
-               "**教学近似**——杠杆两端取自同一幅图的曲线，体系内自洽，仅作概念演示。")
-
-    lab = st.session_state.setdefault("lab", {"active": P.SYSTEM_ORDER[0], "pos": {}})
-    mount = _lab_mount()
-    if mount is None:
-        st.warning("🧪 交互画布没能加载（当前环境不支持 components v2）——请用本地运行或云端版本。")
-        return
-
-    # 内容高度：Fe-C 有预置行 + 室温读数列，更高一点；其余体系图能拉大、读数短。
-    active = lab.get("active", P.SYSTEM_ORDER[0])
-    try:
-        payload = _lab_data()
-        val = mount(data=payload, height=960 if str(active).startswith("Fe-Fe₃C") else 860)
-    except Exception:
-        val = None
-
-    # 处理组件上报（切体系 / 滑块松手 / 预置），只存位置；仅体系真正变了才 rerun 刷下方知识卡。
-    if val is not None and hasattr(val, "get"):
-        try:
-            sid = val.get("sid")
-        except Exception:
-            sid = None
-        if sid in P.SYSTEMS:
-            pos = lab.setdefault("pos", {})
-            old = dict(pos.get(sid) or P.system_default(sid))
-            try:
-                xv = val.get("x")
-                if isinstance(xv, (int, float)):
-                    old["x"] = float(xv)
-            except Exception:
-                pass
-            try:
-                tv = val.get("T")
-                if isinstance(tv, (int, float)):
-                    old["T"] = float(tv)
-            except Exception:
-                pass
-            pos[sid] = old
-            if sid != lab.get("active"):
-                lab["active"] = sid
-                st.rerun()
-
-    if str(lab.get("active", P.SYSTEM_ORDER[0])).startswith("Fe-Fe₃C"):
-        related = _phlab_fec_cards()
-        if related:
-            with st.expander("📚 对照「铁碳合金相图」系列知识点卡片"):
-                for c in related:
-                    with st.expander("· " + c["title"]):
-                        show_card(c)
-
-
-def _phlab_fec_cards():
-    """第七章与铁碳考点相关的知识点卡片(供对照学习)。"""
-    kw = ["杠杆定律", "铁碳", "钢与铸铁", "珠光体", "莱氏体", "渗碳体", "组织组成物", "相与组织"]
-    got = []
-    for c in cards:
-        if not c["chapter"].startswith("第7章"):
-            continue
-        if any(k in c["title"] for k in kw):
-            got.append(c)
-        if len(got) >= 5:
-            break
-    return got
-
-
 # ================= 全局卡通样式 =================
 CSS = """
 <style>
@@ -1709,9 +1592,9 @@ with st.sidebar:
 
 nav = st.pills(
     "导航",
-    ["🗺️ 知识地图", "🧪 相图实验室", "💬 智能问答", "🎯 闯关练习", "📈 学习记录"],
+    ["🗺️ 知识地图", "💬 智能问答", "🎯 闯关练习", "📈 学习记录"],
     label_visibility="collapsed",
-    default="🧪 相图实验室" if os.environ.get("PHASE_LAB_SMOKE") == "1" else "🗺️ 知识地图",
+    default="🗺️ 知识地图",
 )
 
 # ---------- 板块 1：知识地图 ----------
@@ -2016,10 +1899,6 @@ elif nav == "🎯 闯关练习":
                         st.session_state.qz_submitted = False
                         st.session_state.qz_picked = None
                         st.rerun()
-
-# ---------- 板块：相图实验室 ----------
-elif nav == "🧪 相图实验室":
-    _render_phase_lab()
 
 # ---------- 板块 4：学习记录（占位） ----------
 else:
