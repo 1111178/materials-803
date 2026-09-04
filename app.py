@@ -1426,16 +1426,39 @@ def _phlab_fec_cards():
 
 
 @st.fragment
-def _phlab_canvas():
-    """滑块 → 图 → 读数:整段圈成 fragment,拖动滑块只重跑这里,页面其余不动 → 不卡。"""
+def _render_phase_lab():
+    """🧪 相图实验室 = 单个 fragment:选体系 / 开关 / 典型合金跳转 / 滑块 / 图 / 读数
+    全部圈在这段里 → 在实验室里动任何控件都只局部重跑,不整页 rerun,拖动/换体系不白屏。"""
     P = phase_lab
-    sid = st.session_state.get("pl_sys") or P.SYSTEM_ORDER[0]
-    if sid not in P.SYSTEMS:
-        sid = P.SYSTEM_ORDER[0]
-    sysd = P.SYSTEMS[sid]
+    st.markdown("### 🧪 二元相图动态交互实验室")
+    st.caption("把「成分 / 温度」当作探针,在图上实时定位合金状态:自动判所在相区,两相区按"
+               "**杠杆定律**给出两相相对量与 tie line 两端成分。Fe-Fe₃C 数值权威;其余体系为"
+               "**教学近似**——杠杆两端取自同一幅图的曲线,体系内自洽,仅作概念演示。")
+
+    sid = st.selectbox("二元体系", P.SYSTEM_ORDER, key="pl_sys")
+    sysd = P.SYSTEMS.get(sid, P.SYSTEMS[P.SYSTEM_ORDER[0]])
     is_fec = sid.startswith("Fe-Fe₃C")
     slug = re.sub(r"[^0-9A-Za-z]", "", sid)
     dxd, dTd = sysd["default"]["x"], sysd["default"]["T"]
+
+    with st.container(border=True):
+        o = st.columns(5)
+        o[0].toggle("相区填充+标签", value=True, key="pl_o_fill")
+        o[1].toggle("网格", value=True, key="pl_o_grid")
+        o[2].toggle("关键点字母", value=True, key="pl_o_keys")
+        o[3].toggle("光标+杠杆", value=True, key="pl_o_cross")
+        o[4].toggle("反应标注", value=True, key="pl_o_inv")
+
+    # Fe-C 典型合金快捷跳转:按钮放在滑块之前,点击只写 session_state;
+    # 按钮本身已触发本 fragment 重跑 → 下方滑块随即读到新成分/25℃,无需 st.rerun() 整页刷新。
+    if is_fec:
+        st.caption("一键跳到标准钢种 / 铸铁(同时把温度拉到 25℃ 室温):")
+        pc = st.columns(len(P.FEC_PRESETS))
+        for col, (label, c0) in zip(pc, P.FEC_PRESETS):
+            if col.button(label, key="pl_pre_" + label,
+                          help="成分 → " + ("%g" % c0) + "%C,温度 → 25℃"):
+                st.session_state["pl_x_fec"] = float(c0)
+                st.session_state["pl_t_fec"] = 25.0
 
     xs1, xs2 = st.columns(2)
     if is_fec:
@@ -1471,36 +1494,6 @@ def _phlab_canvas():
         if is_fec:
             st.markdown("---")
             _phlab_fec_room(x)
-
-
-def _render_phase_lab():
-    P = phase_lab
-    st.markdown("### 🧪 二元相图动态交互实验室")
-    st.caption("把「成分 / 温度」当作探针,在图上实时定位合金状态:自动判所在相区,两相区按"
-               "**杠杆定律**给出两相相对量与 tie line 两端成分。Fe-Fe₃C 数值权威;其余体系为"
-               "**教学近似**——杠杆两端取自同一幅图的曲线,体系内自洽,仅作概念演示。")
-
-    with st.container(border=True):
-        sid = st.selectbox("二元体系", P.SYSTEM_ORDER, key="pl_sys")
-        is_fec = sid.startswith("Fe-Fe₃C")
-        o = st.columns(5)
-        o[0].toggle("相区填充+标签", value=True, key="pl_o_fill")
-        o[1].toggle("网格", value=True, key="pl_o_grid")
-        o[2].toggle("关键点字母", value=True, key="pl_o_keys")
-        o[3].toggle("光标+杠杆", value=True, key="pl_o_cross")
-        o[4].toggle("反应标注", value=True, key="pl_o_inv")
-
-    # Fe-C 典型合金快捷跳转(整页,低频操作,不放 fragment)
-    if is_fec:
-        st.caption("一键跳到标准钢种 / 铸铁(同时把温度拉到 25℃ 室温):")
-        pc = st.columns(len(P.FEC_PRESETS))
-        for col, (label, c0) in zip(pc, P.FEC_PRESETS):
-            if col.button(label, key="pl_pre_" + label, help="成分 → " + ("%g" % c0) + "%C,温度 → 25℃"):
-                st.session_state["pl_x_fec"] = float(c0)
-                st.session_state["pl_t_fec"] = 25.0
-                st.rerun()
-
-    _phlab_canvas()
 
     if is_fec:
         related = _phlab_fec_cards()
