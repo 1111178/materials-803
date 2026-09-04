@@ -160,6 +160,41 @@ ZHIPUAI_API_KEY = "你的 GLM-4V Key"       # 图片 OCR
 
 ---
 
+## 🔑 激活码授权（卖家用）
+
+**智能问答 / 拍照解题**是付费功能。采用「**用量配额**」模型：每个激活码 = **有效期 + 总次数 + 每日上限**，`admin/registry.json` 作为共享登记处（改完 `push` 后约 1~3 分钟生效）。**共享 = 共享同一份配额，用光即停**，人传人没有意义，你的成本被硬上限封死。未配置授权时页面**不设门槛**，照常免费可用。
+
+### 管理员手工步骤（一次性，约 5 分钟）
+
+1. **仓库改私有**：GitHub → 仓库 Settings → General → Danger Zone → **Change visibility**。
+2. **建细粒度 Token**：GitHub → 头像 → Settings → Developer settings → Fine-grained tokens → Generate。只勾选本仓库 **Contents: Read and write**，有效期自定（建议 1 年）。
+3. **把 Token 粘进 Streamlit Secrets**（配 DeepSeek 的同一页面）：
+   ```toml
+   LICENSE_PAT    = "github_pat_xxxx"
+   LICENSE_REPO   = "1111178/materials-803"
+   LICENSE_PATH   = "admin/registry.json"
+   ```
+   保存自动重启后，**问答页的激活门自动开启**。
+
+### 卖家日常发码（在 `app/` 目录，用你已配好的 SSH）
+
+```bash
+python admin/license_admin.py gen  --days 30 --total 2000 --daily 120 --note "淘宝-张三"   # 生成一个码
+python admin/license_admin.py gen  --owner                                                    # 给自己造永久不限量码
+python admin/license_admin.py list                                                            # 查看全部码与用量
+python admin/license_admin.py revoke AJK3-MQ7X   /   enable AJK3-MQ7X                         # 停用 / 恢复
+python admin/license_admin.py extend AJK3-MQ7X --days 30 --total 5000 --daily 200            # 续期 / 加量
+python admin/license_admin.py push                                                            # 提交并推送，网页端生效
+```
+
+- 参数规则：`--days 30` 有效 30 天（`0`=永久）；`--total` 总次数（`0`=不限）；`--daily` 每日上限（`0`=不限）；默认 30 天 / 2000 次 / 120 次。
+- 码为 8 位、自动去掉易混字母（无 0/O/1/I）；买家输入时**忽略空格和大小写**。
+- 发给买家的使用体验：**输一次即可**，浏览器会自动记住（`localStorage`），换页 / 刷新 / 重开都不用重输；也支持发 `你的链接?m803=激活码` 的直达激活链接。
+- 买家耗尽会提示「联系卖家」；`extend` 加量后 `push` 即恢复。
+- ⚠️ `admin/` 只在你电脑上改、只进私有仓库；**桌面离线包和公开推送都不带它**。
+
+---
+
 ## 项目亮点
 
 1. **不是普通聊天机器人，而是"知识库 + 检索增强"的学习助手**：AI 回答前先检索知识库，把命中的知识点卡片作为上下文，因此**答案有依据、可溯源**，从根上缓解大模型的幻觉问题。

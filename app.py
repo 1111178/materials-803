@@ -153,11 +153,13 @@ import base64
 import hashlib
 import json
 import math
+import ast
 import subprocess
 import sys
 from collections import Counter
 import requests
 import numpy as np
+import licenses
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
@@ -223,6 +225,162 @@ def load_activation_codes() -> set:
     if not raw:
         return set()
     return {c.strip() for c in raw.replace("，", ",").split(",") if c.strip()}
+
+
+# ============== 0.5 激活码·用量配额登记（licenses.py，见 plans/immutable-shimmying-nest.md） ==============
+# 浏览器记忆组件：把激活码存进 localStorage，买家换页 / 刷新 / 重开浏览器都不用重输。
+# globalThis.__m803mem 保证每个页面只向上回报一次，避免 setTriggerValue 触发无限重跑。
+_M803_JS = """
+export default function(component) {
+  const { data, setTriggerValue } = component;
+  if (!globalThis.__m803mem) globalThis.__m803mem = { sent: false };
+  const mem = globalThis.__m803mem;
+  const KEY = 'm803_code';
+  const safe = (fn) => { try { return fn(); } catch (e) { return null; } };
+  const act = safe(() => data) || {};
+  if (act.action === 'save' && act.code) {
+    safe(() => localStorage.setItem(KEY, act.code));
+    setTriggerValue('saved', act.code);
+  } else if (act.action === 'clear') {
+    safe(() => localStorage.removeItem(KEY));
+    setTriggerValue('saved', '');
+  } else if (act.action === 'read') {
+    const v = safe(() => localStorage.getItem(KEY)) || '';
+    if (v && !mem.sent) { mem.sent = true; setTriggerValue('saved', v); }
+  }
+}
+"""
+
+_MEM_COMP = None
+
+
+def _lic_memory():
+    """激活码浏览器记忆组件（单例）。任何异常/不支持都静默降级，不拦买家。"""
+    global _MEM_COMP
+    if _MEM_COMP is None:
+        try:
+            _MEM_COMP = st.components.v2.component("m803_mem", js=_M803_JS, height=1)
+        except Exception:
+            _MEM_COMP = False
+    return _MEM_COMP or None
+
+
+def _lic_status(code: str):
+    """单次登记处状态查询：系统异常转成中文 dict，便于上层直接展示。"""
+    try:
+        return licenses.status(code)
+    except Exception as e:
+        return {"ok": False, "reason": "net",
+                "msg": f"登记处暂时连不上，请稍后重试。（{e}）"}
+
+
+def _render_license_gate():
+    """配额登记模式的激活页（配置了 LICENSE_PAT 时由智能问答板块调用）。
+
+    成功 -> 返回已生效的激活码（继续渲染问答）；未激活 -> 渲染激活框并 st.stop()。
+    激活码自动取回优先级：URL ?m803=… > 浏览器记忆 > 手动输入。
+    买家零门槛：不搞死胡同——激活失败/没码都只是温和提示 + 预填，免费板块始终可逛。
+    """
+    sts = st.session_state
+    sts.setdefault("lic_code", "")      # 本会话生效的激活码
+    sts.setdefault("lic_ok", False)     # 本会话已验证可用
+    sts.setdefault("lic_rec", None)     # 最近一次登记处返回（含剩余次数）
+    sts.setdefault("lic_failed", "")    # 本会话已确认不可用的码（不重复联网）
+    sts.setdefault("lic_msg", "")       # 一次性提示（展示后即清空）
+    sts.setdefault("lic_quit", False)   # 刚点了「退出本机激活」
+
+    def _adopt(code, r):
+        sts.lic_code = code
+        sts.lic_ok = True
+        sts.lic_rec = r.get("rec")
+        try:
+            _m = _lic_memory()
+            if _m:
+                _m(data={"action": "save", "code": code},
+                   default={"saved": code}, on_saved_change=lambda: None)
+        except Exception:
+            pass
+
+    # URL 里带的码（分享链接直达激活）
+    url_code = ""
+    try:
+        _qp = (st.query_params.get("m803") or "")
+        url_code = licenses.normalize(_qp) if licenses.plausible(_qp) else ""
+    except Exception:
+        url_code = ""
+
+    # 本会话已激活：除非 URL 换了别的码，否则直接放行
+    if sts.lic_ok:
+        if not url_code or url_code == sts.lic_code:
+            return sts.lic_code
+        sts.lic_ok = False          # URL 带了新码 -> 走换码流程
+        sts.lic_code = ""
+
+    # 点了「退出本机激活」：清掉本机记忆，回到激活框（换设备 / 公共电脑用）
+    if sts.lic_quit:
+        try:
+            _m = _lic_memory()
+            if _m:
+                _m(data={"action": "clear"}, default={"saved": ""},
+                   on_saved_change=lambda: None)
+        except Exception:
+            pass
+        sts.lic_quit = False
+        sts.lic_msg = "已退出本机激活。同一激活码可换设备再用（共享同一份配额）。"
+
+    # ---- 自动取回：URL 码 或 浏览器记忆 ----
+    cand = ""
+    if url_code and url_code not in (sts.lic_failed, sts.lic_code):
+        cand = url_code                      # URL 码优先（且未失败过）
+    elif not url_code:
+        try:
+            _m = _lic_memory()
+            if _m:
+                _res = _m(data={"action": "read"}, default={"saved": ""},
+                          on_saved_change=lambda: None)
+                _mv = (_res.get("saved") or "") if _res else ""
+                if licenses.plausible(_mv):
+                    _mv = licenses.normalize(_mv)
+                    if _mv not in sts.lic_failed:
+                        cand = _mv
+        except Exception:
+            cand = ""
+
+    if cand:
+        r = _lic_status(cand)
+        if r.get("ok"):
+            _adopt(cand, r)
+            return cand
+        sts.lic_failed = cand
+        if not sts.lic_msg:
+            sts.lic_msg = r.get("msg", "这个激活码现在用不了，请向卖家核实。")
+
+    # ---- 激活框（温柔的整句提示 + 预填，绝不卡死买家）----
+    if sts.lic_msg:
+        st.warning(sts.lic_msg)
+        sts.lic_msg = ""
+    st.markdown("""🔒 **智能问答 / 拍照解题** 需要激活码。
+**知识地图 · 闯关练习 · 3D 模型** 一直免费，先逛也不耽误学习~""")
+    _pre = licenses.pretty(sts.lic_failed) if sts.lic_failed else ""
+    _code = st.text_input("输入卖家发的激活码", max_chars=12,
+                          placeholder="例如：AJK3-MQ7X（8 位，可忽略空格和大小写）",
+                          value=_pre)
+    if st.button("✅ 激活", type="primary"):
+        c = licenses.normalize(_code)
+        if not licenses.plausible(c):
+            st.error("激活码格式不对，请核对卖家发的码（注意区分 0/O、1/I）。")
+        else:
+            r = _lic_status(c)
+            if r.get("ok"):
+                _adopt(c, r)
+                st.toast("✅ 激活成功，已记住本机，下次直接进入问答")
+                st.rerun()
+            else:
+                sts.lic_failed = c
+                st.error(r.get("msg", "激活失败，请联系卖家。"))
+    st.caption("没码？找卖家领取。一个码可多台设备共用、共享同一份用量；❌ 别乱转发，用光就没了。")
+    st.stop()
+    return ""
 
 
 # ================= 1. 检索分词（字符 n-gram） =================
@@ -490,34 +648,94 @@ def ocr_image(provider: str, key: str, image_b64: str, media_type: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-# ================= 5.6 计算题代码执行 =================
+# ================= 5.6 计算题代码执行（安全沙箱） =================
+# 模型输出的 python 块会真的在服务器上跑,而云端 st.secrets 会注入环境变量。
+# 必须:① 不继承宿主环境变量;② -I 隔离运行;③ 只放行纯计算模块,封堵 os/sys/网络/文件/__逃逸。
 _PY_BLOCK = re.compile(r"```python\s*\n(.*?)```", re.S)
+_PY_MAX_LEN = 2000
+_PY_TIMEOUT = 15
+_PY_OUT_MAX = 4000
+_PY_MAX_BLOCKS = 3
+_PY_ALLOW_IMPORT = {
+    "math", "random", "statistics", "fractions", "decimal", "itertools",
+    "functools", "collections", "numpy", "array", "numbers",
+    "time", "datetime", "unicodedata", "string",
+}
+_PY_BLOCK_NAME = {
+    "os", "sys", "open", "eval", "exec", "compile", "input",
+    "breakpoint", "exit", "quit", "help", "getattr", "setattr",
+    "globals", "locals", "vars", "dir", "__import__",
+}
+
+
+def _check_py(code: str):
+    """静态白名单检查。返回 None=放行;否则返回给用户看的安全提示。"""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return "这段代码有语法问题,已跳过。"
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                root = a.name.split(".")[0]
+                if root not in _PY_ALLOW_IMPORT:
+                    return f"这段代码用到受限功能(import {root}),为安全起见已跳过。"
+        elif isinstance(n, ast.ImportFrom):
+            root = (n.module or "").split(".")[0]
+            if root not in _PY_ALLOW_IMPORT:
+                return f"这段代码用到受限功能(import {root}),为安全起见已跳过。"
+            for a in n.names:
+                if a.name.startswith("__"):
+                    return "这段代码包含受限操作,为安全起见已跳过。"
+        elif isinstance(n, ast.Name):
+            if n.id in _PY_BLOCK_NAME or n.id.startswith("__"):
+                return "这段代码包含受限操作(如读写环境/文件),为安全起见已跳过。"
+        elif isinstance(n, ast.Attribute):
+            if n.attr.startswith("__"):
+                return "这段代码包含受限操作,为安全起见已跳过。"
+    return None
 
 
 def run_python_code(code: str) -> str:
-    """执行一段 Python 计算代码并返回输出"""
+    """在无网络、无宿主环境变量的隔离进程里执行一段纯计算代码,只返回输出。"""
     try:
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        code = code.strip()
+        if not code:
+            return ""
+        if len(code) > _PY_MAX_LEN:
+            return "(代码过长,已跳过)"
+        deny = _check_py(code)
+        if deny:
+            return deny
+        # 不继承任何宿主环境变量:密钥/PAT 一律不进入子进程
+        safe_env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"}
         r = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=20,
-            encoding="utf-8", errors="replace", env=env,
+            [sys.executable, "-I", "-c", code],
+            capture_output=True, text=True, timeout=_PY_TIMEOUT,
+            encoding="utf-8", errors="replace", env=safe_env,
         )
         out = (r.stdout or "").strip()
         err = (r.stderr or "").strip()
         if r.returncode != 0:
-            return err or f"(执行退出码 {r.returncode})"
-        return out
-    except Exception as e:
-        return f"(执行出错：{e})"
+            first = err.splitlines()[0].strip() if err else f"(执行退出码 {r.returncode})"
+            return f"(这段代码没算出来:{first[:120]})"
+        return out[:_PY_OUT_MAX]
+    except subprocess.TimeoutExpired:
+        return "(计算超时,已跳过)"
+    except Exception:
+        return "(执行出错,已跳过该代码块)"
 
 
 def run_calc_code(answer: str) -> str:
-    """执行回答中的 Python 代码块，只保留真实输出、隐藏代码本身"""
+    """执行回答中的 Python 代码块，只保留真实输出、隐藏代码本身；限制执行块数量。"""
+    _state = {"n": 0}
+
     def repl(m):
-        code = m.group(1).strip()
-        out = run_python_code(code)
-        return out
+        if _state["n"] >= _PY_MAX_BLOCKS:
+            return "(其余代码块已跳过)"
+        _state["n"] += 1
+        return run_python_code(m.group(1))
+
     return _PY_BLOCK.sub(repl, answer)
 
 
@@ -1469,21 +1687,34 @@ if nav == "🗺️ 知识地图":
 elif nav == "💬 智能问答":
     st.markdown("### 💬 智能问答")
 
-    # ---- 激活码校验（付费功能；未配置 ACTIVATION_CODES 时默认放行）----
-    _valid_codes = load_activation_codes()
-    if _valid_codes and not st.session_state.get("activated", False):
-        st.info("🔒 智能问答和图片识别需要激活码，请向卖家获取后输入")
-        _code = st.text_input("激活码（6位数字）", max_chars=6, placeholder="例如：123456")
-        if st.button("激活", type="primary"):
-            if _code.strip() in _valid_codes:
-                st.session_state.activated = True
-                st.success("✅ 激活成功！现在可以使用智能问答了")
-                st.rerun()
-            else:
-                st.error("激活码无效，请检查后重试")
-        st.stop()
+    # ---- 激活门：配置了 LICENSE_PAT → 用量配额登记；否则退回旧的 ACTIVATION_CODES 逻辑 ----
+    licenses.configure(pat=_env_or_secret("LICENSE_PAT"),
+                       repo=_env_or_secret("LICENSE_REPO") or "1111178/materials-803",
+                       path=_env_or_secret("LICENSE_PATH") or "admin/registry.json")
+    _quota_code = ""
+    if licenses.is_enabled():
+        _quota_code = _render_license_gate()
+    else:
+        _valid_codes = load_activation_codes()
+        if _valid_codes and not st.session_state.get("activated", False):
+            st.info("🔒 智能问答和图片识别需要激活码，请向卖家获取后输入")
+            _code = st.text_input("激活码（6位数字）", max_chars=6, placeholder="例如：123456")
+            if st.button("激活", type="primary"):
+                if _code.strip() in _valid_codes:
+                    st.session_state.activated = True
+                    st.success("✅ 激活成功！现在可以使用智能问答了")
+                    st.rerun()
+                else:
+                    st.error("激活码无效，请检查后重试")
+            st.stop()
 
     st.caption("把题目拍下来或直接打字，小老师帮你讲明白～")
+    if _quota_code:
+        _lr = st.session_state.get("lic_rec") or {}
+        _lt, _ld = _lr.get("_left_total"), _lr.get("_left_day")
+        _tp = "总次数不限" if _lt is None else f"总剩 {_lt} 次"
+        _dp = "今日不限" if _ld is None else f"今日剩 {_ld} 次"
+        st.caption(f"🔑 激活码 {licenses.pretty(_quota_code)} · {_tp} · {_dp}")
 
     uploaded = st.file_uploader("📷 上传题目截图（可选）", type=["png", "jpg", "jpeg"])
     if uploaded is not None:
@@ -1527,13 +1758,34 @@ elif nav == "💬 智能问答":
                 st.info(f"已识别图片文字：{ocr_text}")
                 final_q = (ocr_text + "\n\n" + final_q).strip() if final_q else ocr_text
 
+            # 用量配额：先扣 1 次再调模型（硬封顶），失败则尽力退回
+            _res = None
+            if _quota_code:
+                try:
+                    _res = licenses.reserve(_quota_code)
+                    if not _res.get("ok"):
+                        st.warning(_res.get("msg", "本次请求未通过，请稍后再试。"))
+                        st.stop()
+                except Exception as e:
+                    st.error(f"登记处暂时不可用，本次未扣次数，请稍后重试。（{e}）")
+                    st.stop()
+
             with st.spinner("检索知识库并生成回答…"):
                 try:
                     hits = retrieve(final_q, TOP_K)
                     prompt = build_prompt(final_q, hits)
                     answer = ask_deepseek(api_key, model, prompt) if provider == "DeepSeek" else ask_claude(api_key, model, prompt)
                     answer = run_calc_code(answer)
-
+                    if _res:
+                        st.session_state.lic_rec = _res.get("rec")   # 刷新余量展示
+                except Exception as e:
+                    if _quota_code:
+                        try:
+                            licenses.refund(_quota_code)
+                        except Exception:
+                            pass
+                    st.error(f"调用失败：{e}")
+                else:
                     st.markdown("### 回答")
                     render_md(answer)
 
@@ -1546,8 +1798,6 @@ elif nav == "💬 智能问答":
                         for c in hits:
                             with st.expander(f"【{c['chapter']}】{c['title']}"):
                                 show_card(c)
-                except Exception as e:
-                    st.error(f"调用失败：{e}")
 
 # ---------- 板块 3：闯关练习 ----------
 elif nav == "🎯 闯关练习":
