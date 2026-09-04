@@ -1,3 +1,15 @@
 {
- "codes": {}
+ "codes": {
+  "PZ3MAV3J": {
+   "note": "",
+   "created": "2026-09-04",
+   "expire": null,
+   "limit_total": null,
+   "daily_limit": null,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  }
+ }
 }
