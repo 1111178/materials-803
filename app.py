@@ -1425,26 +1425,18 @@ def _phlab_fec_cards():
     return got
 
 
-def _render_phase_lab():
+@st.fragment
+def _phlab_canvas():
+    """滑块 → 图 → 读数:整段圈成 fragment,拖动滑块只重跑这里,页面其余不动 → 不卡。"""
     P = phase_lab
-    st.markdown("### 🧪 二元相图动态交互实验室")
-    st.caption("把「成分 / 温度」当作探针,在图上实时定位合金状态:自动判所在相区,两相区按"
-               "**杠杆定律**给出两相相对量与 tie line 两端成分。Fe-Fe₃C 数值权威;其余体系为"
-               "**教学近似**——杠杆两端取自同一幅图的曲线,体系内自洽,仅作概念演示。")
-
-    with st.container(border=True):
-        sid = st.selectbox("二元体系", P.SYSTEM_ORDER, key="pl_sys")
-        sysd = P.SYSTEMS[sid]
-        is_fec = sid.startswith("Fe-Fe₃C")
-        o = st.columns(5)
-        opt_fill = o[0].toggle("相区填充+标签", value=True, key="pl_o_fill")
-        opt_grid = o[1].toggle("网格", value=True, key="pl_o_grid")
-        opt_keys = o[2].toggle("关键点字母", value=True, key="pl_o_keys")
-        opt_cross = o[3].toggle("光标+杠杆", value=True, key="pl_o_cross")
-        opt_inv = o[4].toggle("反应标注", value=True, key="pl_o_inv")
-
+    sid = st.session_state.get("pl_sys") or P.SYSTEM_ORDER[0]
+    if sid not in P.SYSTEMS:
+        sid = P.SYSTEM_ORDER[0]
+    sysd = P.SYSTEMS[sid]
+    is_fec = sid.startswith("Fe-Fe₃C")
     slug = re.sub(r"[^0-9A-Za-z]", "", sid)
     dxd, dTd = sysd["default"]["x"], sysd["default"]["T"]
+
     xs1, xs2 = st.columns(2)
     if is_fec:
         x = xs1.slider("含碳量 w(C) / wt%C", min_value=0.0, max_value=6.69,
@@ -1460,6 +1452,45 @@ def _render_phase_lab():
                        max_value=int(sysd["t_domain"][1]), value=int(dTd), step=1,
                        key="pl_t_" + slug)
 
+    opts = dict(
+        fill=st.session_state.get("pl_o_fill", True),
+        grid=st.session_state.get("pl_o_grid", True),
+        keys=st.session_state.get("pl_o_keys", True),
+        cross=st.session_state.get("pl_o_cross", True),
+        inv=st.session_state.get("pl_o_inv", True),
+    )
+
+    lf, lr = st.columns([3, 2], gap="large")
+    with lf:
+        fig = P.build_figure(sysd, x, T, opts=opts)
+        st.plotly_chart(fig, config=dict(displayModeBar=False))
+        if sysd.get("note"):
+            st.caption("ℹ️ " + sysd["note"])
+    with lr:
+        _phlab_readout_col(sysd, x, T)
+        if is_fec:
+            st.markdown("---")
+            _phlab_fec_room(x)
+
+
+def _render_phase_lab():
+    P = phase_lab
+    st.markdown("### 🧪 二元相图动态交互实验室")
+    st.caption("把「成分 / 温度」当作探针,在图上实时定位合金状态:自动判所在相区,两相区按"
+               "**杠杆定律**给出两相相对量与 tie line 两端成分。Fe-Fe₃C 数值权威;其余体系为"
+               "**教学近似**——杠杆两端取自同一幅图的曲线,体系内自洽,仅作概念演示。")
+
+    with st.container(border=True):
+        sid = st.selectbox("二元体系", P.SYSTEM_ORDER, key="pl_sys")
+        is_fec = sid.startswith("Fe-Fe₃C")
+        o = st.columns(5)
+        o[0].toggle("相区填充+标签", value=True, key="pl_o_fill")
+        o[1].toggle("网格", value=True, key="pl_o_grid")
+        o[2].toggle("关键点字母", value=True, key="pl_o_keys")
+        o[3].toggle("光标+杠杆", value=True, key="pl_o_cross")
+        o[4].toggle("反应标注", value=True, key="pl_o_inv")
+
+    # Fe-C 典型合金快捷跳转(整页,低频操作,不放 fragment)
     if is_fec:
         st.caption("一键跳到标准钢种 / 铸铁(同时把温度拉到 25℃ 室温):")
         pc = st.columns(len(P.FEC_PRESETS))
@@ -1469,18 +1500,7 @@ def _render_phase_lab():
                 st.session_state["pl_t_fec"] = 25.0
                 st.rerun()
 
-    lf, lr = st.columns([3, 2], gap="large")
-    with lf:
-        fig = P.build_figure(sysd, x, T, opts=dict(fill=opt_fill, grid=opt_grid,
-                                                   keys=opt_keys, cross=opt_cross, inv=opt_inv))
-        st.plotly_chart(fig, config=dict(displayModeBar=False))
-        if sysd.get("note"):
-            st.caption("ℹ️ " + sysd["note"])
-    with lr:
-        _phlab_readout_col(sysd, x, T)
-        if is_fec:
-            st.markdown("---")
-            _phlab_fec_room(x)
+    _phlab_canvas()
 
     if is_fec:
         related = _phlab_fec_cards()
@@ -1852,12 +1872,6 @@ if nav == "🗺️ 知识地图":
             st.caption("💡 鼠标拖拽旋转 · 滚轮缩放（手机双指缩放）；球体半透明可透看内部。不同结构的“教学连线”含义不同，见上方图例。建议 PC 端查看。")
         else:
             st.caption("👉 点上面的开关即可加载 3D 晶体模型（金属 / 共价 / 离子晶体 / 层状结构 / 密排堆垛）。")
-
-    # ---- 铁碳相图（Fe-Fe₃C 亚稳系，2D 轻量图，默认折叠）----
-    with st.expander("🌡️ 铁碳相图（Fe-Fe₃C 亚稳系）", expanded=False):
-        st.plotly_chart(_fec_diagram_fig())
-        st.caption("💡 C 共晶点(1148℃·4.3%C)→莱氏体；S 共析点(727℃·0.77%C)→珠光体。三条水平线：包晶 1495℃、共晶 1148℃、共析 727℃。对应本章「铁碳合金相图」系列卡片。")
-        st.caption("👉 顶部「🧪 相图实验室」可**拖拽成分 / 温度**实时定位 + 杠杆定律 + 室温组织(支持五个二元系)。")
 
     keyword = st.text_input("🔎 搜索知识点", placeholder="输入关键词，如：加工硬化 / 杠杆定律 / 扩散 / 硅酸盐")
 
