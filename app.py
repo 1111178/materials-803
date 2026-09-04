@@ -160,6 +160,7 @@ from collections import Counter
 import requests
 import numpy as np
 import licenses
+import phase_lab
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
@@ -1300,6 +1301,196 @@ def _fec_diagram_fig():
     return fig
 
 
+# ================= 8. 相图实验室（二元相图动态交互实验室） =================
+# 纯逻辑(判相/杠杆/图构造)在 phase_lab.py,此处只做 Streamlit 控件 + 读数面板。
+def _phlab_pill_clean(text, bg):
+    return (
+        "<span style='display:inline-block;padding:2px 12px;border-radius:999px;"
+        "font-weight:700;font-size:14px;color:#10213A;background:" + bg + ";"
+        "border:1px solid " + bg + "AA;margin-right:6px'>" + text + "</span>"
+    )
+
+
+def _phlab_card(title, body_html, accent="#83B57C"):
+    return (
+        "<div style='background:rgba(255,255,255,0.74);border:1px solid #DFEAD4;"
+        "border-left:4px solid " + accent + ";border-radius:12px;padding:10px 12px;margin:8px 0'>"
+        "<div style='font-size:12px;color:#7A8698;margin-bottom:4px'>" + title + "</div>"
+        + body_html + "</div>"
+    )
+
+
+def _phlab_legend(parts):
+    rows = ""
+    for name, frac, col in parts:
+        rows += (
+            "<div style='display:flex;align-items:center;gap:8px;margin:3px 0'>"
+            "<span style='width:14px;height:14px;border-radius:4px;background:" + col + ";flex:none'></span>"
+            "<span style='flex:1;color:#41534A;font-size:13px'>" + name + "</span>"
+            "<span style='color:#41534A;font-size:13px;font-weight:700'>" + ("%.1f" % frac) + "%</span></div>"
+        )
+    return rows
+
+
+def _phlab_bar(parts):
+    cells = ""
+    for name, frac, col in parts:
+        if frac < 0.05:
+            continue
+        cells += ("<div style='width:" + ("%.2f" % frac) + "%;background:" + col
+                  + ";height:20px' title='" + name + " " + ("%.1f" % frac) + "%'></div>")
+    body = cells or "<div style='width:100%;background:#dfe8d4;height:20px'></div>"
+    return ("<div style='display:flex;height:20px;border-radius:8px;overflow:hidden;"
+            "border:1px solid #D5E3CD'>" + body + "</div>")
+
+
+def _phlab_readout_col(sysd, x, T):
+    """右列读数面板:状态 + 杠杆 + 相构成条(纯 HTML,全部自产内容)。"""
+    P = phase_lab
+    c = P.classify(sysd, x, T)
+    cards = []
+    if c["kind"] == "two":
+        ph0, ph1 = c["phases"]
+        c0c = P.PHASE_COL.get(ph0, "#ccc"); c1c = P.PHASE_COL.get(ph1, "#ccc")
+        w0, w1 = c["w_left"], c["w_right"]
+        head = (_phlab_pill_clean(ph0, c0c) + "&nbsp;" + _phlab_pill_clean(ph1, c1c)
+                + "&nbsp;<span style='color:#41534A;font-size:15px;font-weight:800'>两相区</span>")
+        cards.append(_phlab_card("① 当前状态", head))
+        cards.append(_phlab_card(
+            "② 杠杆定律(等温线 T=" + ("%g" % T) + "℃)",
+            "<div style='font-size:13px;color:#41534A;line-height:1.85'>"
+            "tie line 两端成分:左端 <b>" + ph0 + " = " + ("%.4g" % c["left"]) + "</b>,"
+            "右端 <b>" + ph1 + " = " + ("%.4g" % c["right"]) + "</b> (对应图中金色圆点)。"
+            "<br><b>W(" + ph1 + ")</b> = (x − x₁)/(x₂ − x₁) = " + ("%.2f" % (w1 * 100)) + "%"
+            "<br><b>W(" + ph0 + ")</b> = 1 − W(" + ph1 + ") = " + ("%.2f" % (w0 * 100)) + "%"
+            "</div>", "#FFD166"))
+        parts = [(ph0, w0 * 100, c0c), (ph1, w1 * 100, c1c)]
+        cards.append(_phlab_card(
+            "③ 相相对量(x=" + ("%g" % x) + ")",
+            _phlab_bar(parts) + _phlab_legend(parts), "#F15FA6"))
+    elif c["kind"] == "invariant":
+        cards.append(_phlab_card("⭐ 三相平衡线(无杠杆)",
+                                 "<div style='color:#41534A;font-weight:700;font-size:15px'>" + c["text"]
+                                 + "</div><div style='color:#7A8698;font-size:13px;margin-top:4px'>"
+                                 "此处恰好落在水平线上,三相共存,杠杆定律不适用。</div>", "#F15FA6"))
+    else:  # single
+        ph = c["region"] or ((c.get("phases") or [""])[0])
+        col = P.PHASE_COL.get(ph, "#ccc")
+        note = c.get("text") or P.PHASE_CN.get(ph, ph)
+        if ph == "L":
+            note = "全部熔化 → 单一液相"
+        cards.append(_phlab_card(
+            "① 当前状态",
+            _phlab_pill_clean(ph, col) + "&nbsp;<span style='color:#41534A;font-size:15px;font-weight:800'>单相区</span>"
+            + "<div style='color:#7A8698;font-size:13px;margin-top:6px'>" + str(note) + "</div>"))
+    st.markdown("".join(cards), unsafe_allow_html=True)
+
+
+def _phlab_fec_room(x):
+    """Fe-Fe₃C 专用:材料类别 + 室温组织/相组成物(考点公式)。"""
+    P = phase_lab
+    if x >= 6.68:
+        st.markdown(_phlab_card(
+            "室温(25℃)",
+            _phlab_pill_clean("Fe₃C", P.PHASE_COL["Fe₃C"])
+            + "&nbsp;<span style='color:#41534A;font-weight:800'>纯渗碳体(6.69%C)</span>"
+            + "<div style='color:#7A8698;font-size:13px;margin-top:4px'>成分已达渗碳体成分,组织 = 相 = Fe₃C。</div>",
+            "#F15FA6"), unsafe_allow_html=True)
+        return
+    ro = P.fec_room_readout(x)
+    st.markdown(_phlab_card(
+        "材料类别 · 此成分室温平衡组织(" + ("%.3g" % x) + "%C)",
+        _phlab_pill_clean(ro["cls"], "#BBD5F2"), "#83B57C"), unsafe_allow_html=True)
+    st.markdown(_phlab_card(
+        "组织组成物",
+        _phlab_bar(ro["org"]) + _phlab_legend(ro["org"]) + ro["tags"],
+        "#FFD166"), unsafe_allow_html=True)
+    st.markdown(_phlab_card(
+        "相组成物(室温)",
+        _phlab_bar(ro["ph"]) + _phlab_legend(ro["ph"]) + "公式:W(Fe₃C)=(C₀−0.0008)/(6.69−0.0008)",
+        "#F15FA6"), unsafe_allow_html=True)
+
+
+def _phlab_fec_cards():
+    """第七章与铁碳考点相关的知识点卡片(供对照学习)。"""
+    kw = ["杠杆定律", "铁碳", "钢与铸铁", "珠光体", "莱氏体", "渗碳体", "组织组成物", "相与组织"]
+    got = []
+    for c in cards:
+        if not c["chapter"].startswith("第7章"):
+            continue
+        if any(k in c["title"] for k in kw):
+            got.append(c)
+        if len(got) >= 5:
+            break
+    return got
+
+
+def _render_phase_lab():
+    P = phase_lab
+    st.markdown("### 🧪 二元相图动态交互实验室")
+    st.caption("把「成分 / 温度」当作探针,在图上实时定位合金状态:自动判所在相区,两相区按"
+               "**杠杆定律**给出两相相对量与 tie line 两端成分。Fe-Fe₃C 数值权威;其余体系为"
+               "**教学近似**——杠杆两端取自同一幅图的曲线,体系内自洽,仅作概念演示。")
+
+    with st.container(border=True):
+        sid = st.selectbox("二元体系", P.SYSTEM_ORDER, key="pl_sys")
+        sysd = P.SYSTEMS[sid]
+        is_fec = sid.startswith("Fe-Fe₃C")
+        o = st.columns(5)
+        opt_fill = o[0].toggle("相区填充+标签", value=True, key="pl_o_fill")
+        opt_grid = o[1].toggle("网格", value=True, key="pl_o_grid")
+        opt_keys = o[2].toggle("关键点字母", value=True, key="pl_o_keys")
+        opt_cross = o[3].toggle("光标+杠杆", value=True, key="pl_o_cross")
+        opt_inv = o[4].toggle("反应标注", value=True, key="pl_o_inv")
+
+    slug = re.sub(r"[^0-9A-Za-z]", "", sid)
+    dxd, dTd = sysd["default"]["x"], sysd["default"]["T"]
+    xs1, xs2 = st.columns(2)
+    if is_fec:
+        x = xs1.slider("含碳量 w(C) / wt%C", min_value=0.0, max_value=6.69,
+                       value=float(dxd), step=0.01, format="%.3f",
+                       help="合金平均成分(wt%C)", key="pl_x_fec")
+        T = xs2.slider("温度 T / ℃", min_value=0.0, max_value=1600.0,
+                       value=float(dTd), step=1.0, key="pl_t_fec")
+    else:
+        x = xs1.slider("成分(%s)" % sysd["xlabel"], min_value=int(sysd["x_domain"][0]),
+                       max_value=int(sysd["x_domain"][1]), value=int(dxd), step=1,
+                       key="pl_x_" + slug)
+        T = xs2.slider("温度 T / ℃", min_value=int(sysd["t_domain"][0]),
+                       max_value=int(sysd["t_domain"][1]), value=int(dTd), step=1,
+                       key="pl_t_" + slug)
+
+    if is_fec:
+        st.caption("一键跳到标准钢种 / 铸铁(同时把温度拉到 25℃ 室温):")
+        pc = st.columns(len(P.FEC_PRESETS))
+        for col, (label, c0) in zip(pc, P.FEC_PRESETS):
+            if col.button(label, key="pl_pre_" + label, help="成分 → " + ("%g" % c0) + "%C,温度 → 25℃"):
+                st.session_state["pl_x_fec"] = float(c0)
+                st.session_state["pl_t_fec"] = 25.0
+                st.rerun()
+
+    lf, lr = st.columns([3, 2], gap="large")
+    with lf:
+        fig = P.build_figure(sysd, x, T, opts=dict(fill=opt_fill, grid=opt_grid,
+                                                   keys=opt_keys, cross=opt_cross, inv=opt_inv))
+        st.plotly_chart(fig, config=dict(displayModeBar=False))
+        if sysd.get("note"):
+            st.caption("ℹ️ " + sysd["note"])
+    with lr:
+        _phlab_readout_col(sysd, x, T)
+        if is_fec:
+            st.markdown("---")
+            _phlab_fec_room(x)
+
+    if is_fec:
+        related = _phlab_fec_cards()
+        if related:
+            with st.expander("📚 对照「铁碳合金相图」系列知识点卡片"):
+                for c in related:
+                    with st.expander("· " + c["title"]):
+                        show_card(c)
+
+
 # ================= 全局卡通样式 =================
 CSS = """
 <style>
@@ -1592,9 +1783,9 @@ with st.sidebar:
 
 nav = st.pills(
     "导航",
-    ["🗺️ 知识地图", "💬 智能问答", "🎯 闯关练习", "📈 学习记录"],
+    ["🗺️ 知识地图", "🧪 相图实验室", "💬 智能问答", "🎯 闯关练习", "📈 学习记录"],
     label_visibility="collapsed",
-    default="🗺️ 知识地图",
+    default="🧪 相图实验室" if os.environ.get("PHASE_LAB_SMOKE") == "1" else "🗺️ 知识地图",
 )
 
 # ---------- 板块 1：知识地图 ----------
@@ -1666,6 +1857,7 @@ if nav == "🗺️ 知识地图":
     with st.expander("🌡️ 铁碳相图（Fe-Fe₃C 亚稳系）", expanded=False):
         st.plotly_chart(_fec_diagram_fig())
         st.caption("💡 C 共晶点(1148℃·4.3%C)→莱氏体；S 共析点(727℃·0.77%C)→珠光体。三条水平线：包晶 1495℃、共晶 1148℃、共析 727℃。对应本章「铁碳合金相图」系列卡片。")
+        st.caption("👉 顶部「🧪 相图实验室」可**拖拽成分 / 温度**实时定位 + 杠杆定律 + 室温组织(支持五个二元系)。")
 
     keyword = st.text_input("🔎 搜索知识点", placeholder="输入关键词，如：加工硬化 / 杠杆定律 / 扩散 / 硅酸盐")
 
@@ -1904,6 +2096,10 @@ elif nav == "🎯 闯关练习":
                         st.session_state.qz_submitted = False
                         st.session_state.qz_picked = None
                         st.rerun()
+
+# ---------- 板块：相图实验室 ----------
+elif nav == "🧪 相图实验室":
+    _render_phase_lab()
 
 # ---------- 板块 4：学习记录（占位） ----------
 else:
