@@ -2,6 +2,10 @@
 .config.json
 .streamlit/secrets.toml
 
+# ===== 激活码登记处（只存私有登记仓库,绝不进 app 公开仓库） =====
+admin/registry.json
+admin/reg_config.json
+
 # ===== Python =====
 __pycache__/
 *.py[cod]

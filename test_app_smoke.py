@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""AppTest 冒烟:相图实验室分支渲染 + 切体系 + 切回知识地图均不抛错。"""
+"""AppTest 冒烟:相图实验室(浏览器本地渲染的 components v2 分支)渲染 / 切板块不抛错。
+
+实验室交互已整体搬进 iframe(JS 本地重画),AppTest 里跑不了 JS 也不要紧——
+组件挂载在 AppTest 下要么返回空、要么被 try 降级成提示,都不应让页面崩溃。
+"""
 import os
 import sys
 
@@ -8,44 +12,32 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
+LAB_HEAD = "二元相图动态交互实验室"
 
-def run_app():
-    at = AppTest.from_file("app.py", default_timeout=30)
-    at.run()
-    assert not at.exception, "启动异常: %s" % [str(e.value) for e in at.exception]
-    return at
+
+def has_header(at, text):
+    return any((getattr(m, "value", "") or "").find(text) >= 0 for m in at.markdown)
 
 
 def main():
-    # 1) 相图实验室默认落地(env seam)
-    at = run_app()
-    sels = [s for s in at.selectbox if s.key == "pl_sys"]
-    assert sels, "没进相图实验室分支(缺 pl_sys selectbox)"
-    assert len(at.selectbox) >= 1
-    sld = [s for s in at.slider if s.key in ("pl_x_fec", "pl_t_fec")]
-    assert len(sld) == 2, "缺 Fe-C 成分/温度滑杆"
-    print("OK 1) 相图实验室默认分支:selectbox + 2 滑杆 就位")
-
-    # 2) 切体系(Pb-Sn)→ 无异常;成分/温度滑杆换 key 存在
-    at.selectbox(key="pl_sys").select("Pb-Sn 共晶")
+    at = AppTest.from_file("app.py", default_timeout=30)
     at.run()
-    assert not at.exception, "切体系异常: %s" % [str(e.value) for e in at.exception]
-    pbx = [s for s in at.slider if s.key == "pl_x_PbSn"]
-    assert pbx, "Pb-Sn 滑杆 key 缺失"
-    print("OK 2) 切 Pb-Sn 共晶:无异常,滑杆 key=pl_x_PbSn 就位")
+    assert not at.exception, "启动异常: %s" % [str(e.value) for e in at.exception]
+    assert has_header(at, LAB_HEAD), "没落在相图实验室默认分支(env seam 失效?)"
+    assert len(at.pills) >= 1, "缺导航 pills"
+    print("OK 1) 相图实验室默认分支:标题在、无异常(组件在 AppTest 下应安全降级)")
 
-    # 3) 再切 Al-Si(独立 key)与 Pt-Ag
-    at.selectbox(key="pl_sys").select("Pt-Ag 包晶")
+    at.pills[0].select("🗺️ 知识地图")
     at.run()
-    assert not at.exception, "切 Pt-Ag 异常"
-    assert [s for s in at.slider if s.key == "pl_x_PtAg"], "Pt-Ag 滑杆缺失"
-    print("OK 3) 切 Pt-Ag 包晶:无异常")
+    assert not at.exception, "切知识地图异常: %s" % [str(e.value) for e in at.exception]
+    assert not has_header(at, LAB_HEAD), "切走后实验室标题应消失"
+    print("OK 2) 切到 🗺️ 知识地图:无异常")
 
-    # 4) 切回知识地图(非实验室分支)
-    at.selectbox(key="pl_sys").select("Cu-Ni 匀晶")
+    at.pills[0].select("🧪 相图实验室")
     at.run()
-    assert not at.exception
-    print("OK 4) Cu-Ni 体系正常")
+    assert not at.exception, "切回实验室异常: %s" % [str(e.value) for e in at.exception]
+    assert has_header(at, LAB_HEAD), "切回后实验室标题应在"
+    print("OK 3) 切回 🧪 相图实验室:无异常")
 
     print("SMOKE PASS")
 

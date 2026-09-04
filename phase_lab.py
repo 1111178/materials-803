@@ -420,6 +420,48 @@ def clamp(s, x, T):
     x0, x1 = s["x_domain"]; t0, t1 = s["t_domain"]
     return max(x0, min(x1, float(x))), max(t0, min(t1, float(T)))
 
+
+# ---------- 前端 spec 导出(供浏览器本地渲染,与 python 判相同源) ----------
+def _dash_code(d):
+    return {"dash": 1, "dot": 2}.get(d, 0)
+
+
+def system_spec(sid):
+    """把某体系的静态可绘数据打成 JSON-safe dict,喂给前端 canvas 渲染器。
+
+    判相/杠杆所需的全部几何(region 多边形 + 两相区杠杆弧)都原样带出,
+    浏览器用同一份曲线重算端点 → 前端与后端数值永远自洽。"""
+    s = SYSTEMS[sid]
+    arcs = {k: [list(map(float, p)) for p in v] for k, v in s["arcs"].items()}
+    regions = []
+    for r in s["regions"]:
+        item = dict(name=r["name"], kind=r["kind"], phases=list(r["phases"]),
+                    fill=_fillcol(r["phases"]),
+                    poly=[list(map(float, p)) for p in r["poly"]])
+        if r.get("bounds"):
+            item["left"], item["right"] = r["bounds"]
+        regions.append(item)
+    lines = [dict(pts=[list(map(float, p)) for p in ln["pts"]],
+                  color=ln.get("color", AXIS), w=ln.get("w", 2.4),
+                  dash=_dash_code(ln.get("dash"))) for ln in s["lines"]]
+    invs = [dict(T=inv["T"], x_lo=inv["x_lo"], x_hi=inv["x_hi"], txt=inv["txt"])
+            for inv in s["invariants"]]
+    return dict(
+        id=s["id"], title=s["title"], xlabel=s["xlabel"], ylabel=s["ylabel"],
+        compA=s.get("comp_A", ""), compB=s.get("comp_B", ""),
+        endA=s.get("phase_A_at0") or "α", endB=s.get("phase_B_at1") or "β",
+        x_domain=[float(v) for v in s["x_domain"]],
+        t_domain=[float(v) for v in s["t_domain"]],
+        fec=s["id"].startswith("Fe-Fe₃C"),
+        note=s.get("note") or "", exact=bool(s.get("exact", False)),
+        colors=PHASE_COL, phname=PHASE_CN,
+        regions=regions, arcs=arcs, lines=lines, invariants=invs,
+        keys=[[k[0], float(k[1]), float(k[2])] for k in s["keypoints"]],
+        presets=FEC_PRESETS if s["id"].startswith("Fe-Fe₃C") else [],
+        fecAnchors=dict(P=0.0218, S=0.77, E=2.11, C=4.30, F=6.69),
+        default=dict(x=float(s["default"]["x"]), T=float(s["default"]["T"])),
+    )
+
 # ---------- 图构造 ----------
 def _scatter_lines(pts, color, w=2.4, dash=None):
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]

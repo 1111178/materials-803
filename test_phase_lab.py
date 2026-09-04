@@ -198,4 +198,37 @@ check("build_figure PtAg 全关不抛错", len(fig2.data) > 0)
 h = P.bar_html([("α", 0.5, "#f00"), ("β", 0.5, "#00f")])
 check("bar_html 生成", "width:50.00%" in h and "display:flex" in h)
 
+# ---------- 7) system_spec 前端导出(spec 完整性 / JSON 可序列化) ----------
+import json  # noqa: E402
+
+REQ = ("id", "title", "xlabel", "ylabel", "compA", "compB", "endA", "endB",
+       "x_domain", "t_domain", "fec", "exact", "colors", "phname",
+       "regions", "arcs", "lines", "invariants", "keys", "presets", "default")
+for sid in P.SYSTEM_ORDER:
+    spec = P.system_spec(sid)
+    for k in REQ:
+        check("spec %s has key %s" % (sid, k), k in spec)
+    xd, td = spec["x_domain"], spec["t_domain"]
+    check("spec %s 域合法" % sid, len(xd) == 2 and len(td) == 2
+          and xd[0] < xd[1] and td[0] < td[1])
+    for r in spec["regions"]:
+        if r["kind"] == "two":
+            check("spec %s 两相区 %s 有左右弧" % (sid, r["name"]),
+                  r.get("left") in spec["arcs"] and r.get("right") in spec["arcs"])
+        check("spec %s region %s poly 数值" % (sid, r["name"]),
+              all(len(p) == 2 and isinstance(p[0], (int, float))
+                  and isinstance(p[1], (int, float)) for p in r["poly"]))
+    for aname, arc in spec["arcs"].items():
+        ts = [p[1] for p in arc]
+        check("spec %s arc %s T 升序" % (sid, aname),
+              all(b >= a for a, b in zip(ts, ts[1:])))
+    text = json.dumps(spec, ensure_ascii=False)
+    check("spec %s json 可回读" % sid, json.loads(text)["id"] == spec["id"])
+    check("spec %s endA/endB 归属色表" % sid,
+          spec["endA"] in spec["colors"] and spec["endB"] in spec["colors"])
+    if spec["fec"]:
+        check("spec %s fec 预置=7" % sid, len(spec["presets"]) == 7)
+    else:
+        check("spec %s 非 fec 无预置" % sid, spec["presets"] == [])
+
 print("ALL %d CHECKS PASS" % len(PASS))

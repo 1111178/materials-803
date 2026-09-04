@@ -2,8 +2,8 @@
 """
 license_admin.py —— 卖家侧激活码管理工具(只在你自己电脑上跑)
 
-登记数据 = 同目录 registry.json(提交进私有仓库的那个文件),
-改完用 `push` 提交推送,网页端约 1~3 分钟生效。
+登记数据 = 登记仓库里的 registry.json(默认本脚本同目录;也可用 reg_config.json /
+LICENSE_REG_DIR 指向私有登记仓库),改完用 `push` 提交推送,网页端约 1~3 分钟生效。
 
 用法(在 app/ 目录下运行):
   python admin/license_admin.py gen  --days 30 --total 2000 --daily 120 --note "淘宝-张三"
@@ -32,8 +32,29 @@ import licenses  # noqa: E402
 
 UTC8 = timezone(timedelta(hours=8))
 HERE = os.path.dirname(os.path.abspath(__file__))
-REG = os.path.join(HERE, "registry.json")
-REPO = os.path.dirname(HERE)
+
+
+def _resolve_registry_dir() -> str:
+    """登记处 admin 目录解析(登记处与 app 代码仓库解耦,避免激活码进公开仓库):
+    LICENSE_REG_DIR 环境变量 > admin/reg_config.json 的 dir 字段 > 默认 HERE(旧行为)。
+    reg_config.json 被 .gitignore 忽略、不入库;里头的 dir 指向私有登记仓库的 admin 目录。"""
+    env = os.environ.get("LICENSE_REG_DIR", "").strip()
+    if env:
+        return env
+    cfg = os.path.join(HERE, "reg_config.json")
+    try:
+        with open(cfg, encoding="utf-8") as f:
+            d = (json.load(f).get("dir") or "").strip()
+        if d:
+            return d
+    except Exception:
+        pass
+    return HERE
+
+
+ADMIN = _resolve_registry_dir()
+REG = os.path.join(ADMIN, "registry.json")   # 登记数据文件
+GITROOT = os.path.dirname(ADMIN)             # 登记仓库的 git 根
 
 DEFAULT_DAYS, DEFAULT_TOTAL, DEFAULT_DAILY = 30, 2000, 120
 
@@ -163,16 +184,17 @@ def cmd_extend(a) -> int:
 
 
 def cmd_push(a) -> int:
-    rel = os.path.relpath(REG, REPO)
-    if subprocess.run(["git", "-C", REPO, "add", rel]).returncode != 0:
-        print("git add 失败"); return 1
+    rel = os.path.relpath(REG, GITROOT)
+    if subprocess.run(["git", "-C", GITROOT, "add", rel]).returncode != 0:
+        print("git add 失败——registry 是否已被 gitignore?确认登记处指向(reg_config.json)是私有登记仓库而非 app 仓库")
+        return 1
     msg = a.msg or "license registry: update (admin)"
-    if subprocess.run(["git", "-C", REPO, "commit", "-m", msg]).returncode != 0:
+    if subprocess.run(["git", "-C", GITROOT, "commit", "-m", msg]).returncode != 0:
         print("没有需要提交的改动?"); return 1
-    r = subprocess.run(["git", "-C", REPO, "push", "origin", "HEAD"], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", GITROOT, "push", "origin", "HEAD"], capture_output=True, text=True)
     if r.returncode != 0:
         print("push 失败:\n", r.stderr[:400]); return 1
-    print("已推送,网页约 1~3 分钟自动生效。")
+    print("已推送到登记仓库,网页约 1~3 分钟自动生效。")
     return 0
 
 
