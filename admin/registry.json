@@ -76,6 +76,138 @@
    "used_day": 0,
    "day": "2026-09-04",
    "enabled": true
+  },
+  "UL4SX2YH": {
+   "note": "引流-送1",
+   "created": "2026-09-04",
+   "expire": "2026-09-06",
+   "limit_total": 30,
+   "daily_limit": 10,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "C8Z74H4K": {
+   "note": "引流-送2",
+   "created": "2026-09-04",
+   "expire": "2026-09-06",
+   "limit_total": 30,
+   "daily_limit": 10,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "F27MVXCC": {
+   "note": "引流-送3",
+   "created": "2026-09-04",
+   "expire": "2026-09-06",
+   "limit_total": 30,
+   "daily_limit": 10,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "MRVFSL5G": {
+   "note": "体验卡-库存1",
+   "created": "2026-09-04",
+   "expire": "2026-09-07",
+   "limit_total": 80,
+   "daily_limit": 40,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "2GDAHBJ7": {
+   "note": "体验卡-库存2",
+   "created": "2026-09-04",
+   "expire": "2026-09-07",
+   "limit_total": 80,
+   "daily_limit": 40,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "Z5ND82GE": {
+   "note": "体验卡-库存3",
+   "created": "2026-09-04",
+   "expire": "2026-09-07",
+   "limit_total": 80,
+   "daily_limit": 40,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "QG8A82U7": {
+   "note": "月卡-库存1",
+   "created": "2026-09-04",
+   "expire": "2026-10-04",
+   "limit_total": 600,
+   "daily_limit": 60,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "SBKBSDH5": {
+   "note": "月卡-库存2",
+   "created": "2026-09-04",
+   "expire": "2026-10-04",
+   "limit_total": 600,
+   "daily_limit": 60,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "AG9CAZ8G": {
+   "note": "月卡-库存3",
+   "created": "2026-09-04",
+   "expire": "2026-10-04",
+   "limit_total": 600,
+   "daily_limit": 60,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "W3AHGSA8": {
+   "note": "冲刺卡-库存1",
+   "created": "2026-09-04",
+   "expire": "2026-12-18",
+   "limit_total": 2000,
+   "daily_limit": 120,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "4KUZMXF5": {
+   "note": "冲刺卡-库存2",
+   "created": "2026-09-04",
+   "expire": "2026-12-18",
+   "limit_total": 2000,
+   "daily_limit": 120,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "UMMXFY7K": {
+   "note": "冲刺卡-库存3",
+   "created": "2026-09-04",
+   "expire": "2026-12-18",
+   "limit_total": 2000,
+   "daily_limit": 120,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
   }
  }
 }
