@@ -10,6 +10,72 @@
    "used_day": 1,
    "day": "2026-09-04",
    "enabled": true
+  },
+  "BH6BVWC6": {
+   "note": "内测-同学01",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "EKXEHNR6": {
+   "note": "内测-同学02",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "YJ75UDU7": {
+   "note": "内测-同学03",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "LJLKTP93": {
+   "note": "内测-同学04",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "UHBMGZL9": {
+   "note": "内测-同学05",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
+  },
+  "T9SHBK7W": {
+   "note": "内测-同学06",
+   "created": "2026-09-04",
+   "expire": "2026-09-11",
+   "limit_total": 100,
+   "daily_limit": 20,
+   "used_total": 0,
+   "used_day": 0,
+   "day": "2026-09-04",
+   "enabled": true
   }
  }
 }
