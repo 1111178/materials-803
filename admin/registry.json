@@ -6,8 +6,8 @@
    "expire": null,
    "limit_total": null,
    "daily_limit": null,
-   "used_total": 0,
-   "used_day": 0,
+   "used_total": 1,
+   "used_day": 1,
    "day": "2026-09-04",
    "enabled": true
   }
